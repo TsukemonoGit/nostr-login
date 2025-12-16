@@ -11,7 +11,7 @@ import { IframeNostrRpc, Nip46Signer, ReadyListener } from './Nip46';
 import { PrivateKeySigner } from './Signer';
 
 const OUTBOX_RELAYS = ['wss://user.kindpag.es', 'wss://purplepag.es', 'wss://relay.nos.social'];
-const DEFAULT_NOSTRCONNECT_RELAY = 'wss://relay.nsec.app/';
+const DEFAULT_NOSTRCONNECT_RELAYS = ['wss://relay.nsec.app/','wss://ephemeral.snowflare.cc/'];
 const NOSTRCONNECT_APPS: ConnectionString[] = [
   {
     name: 'Nsec.app',
@@ -19,19 +19,19 @@ const NOSTRCONNECT_APPS: ConnectionString[] = [
     canImport: true,
     img: 'https://nsec.app/assets/favicon.ico',
     link: 'https://use.nsec.app/<nostrconnect>',
-    relay: 'wss://relay.nsec.app/',
+    relays: DEFAULT_NOSTRCONNECT_RELAYS,
   },
   {
     name: 'Amber',
     img: 'https://raw.githubusercontent.com/greenart7c3/Amber/refs/heads/master/assets/android-icon.svg',
     link: '<nostrconnect>',
-    relay: 'wss://relay.nsec.app/',
+    relays: DEFAULT_NOSTRCONNECT_RELAYS,
   },
   {
     name: 'Other key stores',
     img: '',
     link: '<nostrconnect>',
-    relay: 'wss://relay.nsec.app/',
+    relays: DEFAULT_NOSTRCONNECT_RELAYS,
   },
 ];
 
@@ -91,13 +91,13 @@ class AuthNostrService extends EventEmitter implements Signer {
     if (this.signerPromise) {
       try {
         await this.signerPromise;
-      } catch {}
+      } catch { }
     }
 
     if (this.readyPromise) {
       try {
         await this.readyPromise;
-      } catch {}
+      } catch { }
     }
   }
 
@@ -107,7 +107,7 @@ class AuthNostrService extends EventEmitter implements Signer {
   }
 
   public async nostrConnect(
-    relay?: string,
+    relays?: string[],
     {
       domain = '',
       link = '',
@@ -120,7 +120,8 @@ class AuthNostrService extends EventEmitter implements Signer {
       iframeUrl?: string;
     } = {},
   ) {
-    relay = relay || DEFAULT_NOSTRCONNECT_RELAY;
+    relays = relays && relays.length > 0 ? relays : DEFAULT_NOSTRCONNECT_RELAYS;
+
 
     const info: Info = {
       authMethod: 'connect',
@@ -128,7 +129,7 @@ class AuthNostrService extends EventEmitter implements Signer {
       signerPubkey: '', // unknown too!
       sk: this.nostrConnectKey,
       domain: domain,
-      relays: [relay],
+      relays: relays,
       iframeUrl,
     };
 
@@ -143,7 +144,7 @@ class AuthNostrService extends EventEmitter implements Signer {
     // signer learns the remote pubkey
     if (!info.pubkey || !info.signerPubkey) throw new Error('Bad remote pubkey');
 
-    info.bunkerUrl = `bunker://${info.signerPubkey}?relay=${relay}`;
+  info.bunkerUrl = `bunker://${info.signerPubkey}?${relays.map((r, i) => `${i !== 0 ? '&' : ''}relay=${r}`)}`;
 
     // callback
     if (!importConnect) this.onAuth('login', info);
@@ -151,7 +152,14 @@ class AuthNostrService extends EventEmitter implements Signer {
     return info;
   }
 
-  public async createNostrConnect(relay?: string) {
+  public async createNostrConnect(relays?: string) {
+    const relayList = relays
+      ? relays
+        .split(",")
+        .map(r => r.trim().replace(/['"]/g, ""))
+        .filter(r => r.length > 0)
+      : [];
+
     this.nostrConnectKey = generatePrivateKey();
     this.nostrConnectSecret = Math.random().toString(36).substring(7);
 
@@ -163,7 +171,7 @@ class AuthNostrService extends EventEmitter implements Signer {
       perms: encodeURIComponent(this.params.optionsModal.perms || ''),
     };
 
-    return `nostrconnect://${pubkey}?image=${meta.icon}&url=${meta.url}&name=${meta.name}&perms=${meta.perms}&secret=${this.nostrConnectSecret}${relay ? `&relay=${relay}` : ''}`;
+    return `nostrconnect://${pubkey}?image=${meta.icon}&url=${meta.url}&name=${meta.name}&perms=${meta.perms}&secret=${this.nostrConnectSecret}${relayList.length > 0 ? relayList.map((r, i) => `&relay=${r}`) : ""}`;
   }
 
   public async getNostrConnectServices(): Promise<[string, ConnectionString[]]> {
@@ -183,25 +191,35 @@ class AuthNostrService extends EventEmitter implements Signer {
     // }
 
     for (const a of apps) {
-      let relay = DEFAULT_NOSTRCONNECT_RELAY;
+      let relays: string[] = [...DEFAULT_NOSTRCONNECT_RELAYS];
+
       if (a.link.startsWith('https://')) {
-        let domain = a.domain || new URL(a.link).hostname;
+        const domain = a.domain || new URL(a.link).hostname;
         try {
           const info = await (await fetch(`https://${domain}/.well-known/nostr.json`)).json();
           const pubkey = info.names['_'];
-          const relays = info.nip46[pubkey] as string[];
-          if (relays && relays.length) relay = relays[0];
-          a.iframeUrl = info.nip46.iframe_url || '';
+          const appRelays = info.nip46?.[pubkey] as string[] | undefined;
+
+          if (Array.isArray(appRelays) && appRelays.length > 0) {
+            relays = appRelays;
+          }
+
+          a.iframeUrl = info.nip46?.iframe_url || '';
         } catch (e) {
           console.log('Bad app info', e, a);
         }
       }
-      const nc = nostrconnect + '&relay=' + relay;
+
+      const relayParams = relays
+        .map(r => r.replace(/['"]/g, ''))
+        .map(r => `&relay=${encodeURIComponent(r)}`)
+        .join('');
+
+      const nc = nostrconnect + relayParams;
+
       if (a.iframeUrl) {
-        // pass plain nc url for iframe-based flow
         a.link = nc;
       } else {
-        // we will open popup ourselves
         a.link = a.link.replace('<nostrconnect>', nc);
       }
     }
@@ -242,19 +260,18 @@ class AuthNostrService extends EventEmitter implements Signer {
   }
 
   public async importAndConnect(cs: ConnectionString) {
-    const { relay, domain, link, iframeUrl } = cs;
+    const { relays, domain, link, iframeUrl } = cs;
     if (!domain) throw new Error('Domain required');
 
-    const info = await this.nostrConnect(relay, { domain, link, importConnect: true, iframeUrl });
+    const info = await this.nostrConnect(relays, {
+      domain,
+      link,
+      importConnect: true,
+      iframeUrl,
+    });
 
-    // logout to remove local keys from storage
-    // but keep the connect signer
-    await this.logout(/*keepSigner*/ true);
-
-    // release local one
+    await this.logout(true);
     this.localSigner = null;
-
-    // notify app that we've switched to 'connect' keys
     this.onAuth('login', info);
   }
 
@@ -300,8 +317,10 @@ class AuthNostrService extends EventEmitter implements Signer {
     const userPubkey = await this.signer!.createAccount2({ bunkerPubkey: info.signerPubkey!, name, domain, perms: this.params.optionsModal.perms });
 
     return {
-      bunkerUrl: `bunker://${userPubkey}?relay=${info.relays?.[0]}`,
-      sk: info.sk, // reuse the same local key
+      bunkerUrl:
+        `bunker://${userPubkey}?` +
+        (info.relays ?? []).map((r: string) => `relay=${encodeURIComponent(r)}`).join('&'),
+      sk: info.sk,
     };
   }
 
@@ -532,7 +551,7 @@ class AuthNostrService extends EventEmitter implements Signer {
     if (this.signerPromise) {
       try {
         await this.signerPromise;
-      } catch {}
+      } catch { }
     }
 
     // we remove support for iframe from nip05 and bunker-url methods,
@@ -630,7 +649,7 @@ class AuthNostrService extends EventEmitter implements Signer {
       if (iframeUrl) info.iframeUrl = iframeUrl;
 
       // console.log('nostr login auth info', info);
-      if (!info.signerPubkey || !info.sk || !info.relays?.[0]) {
+      if (!info.signerPubkey || !info.sk || !info.relays || info.relays.length === 0) {
         throw new Error(`Bad bunker url ${bunkerUrl}`);
       }
 

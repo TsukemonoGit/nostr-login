@@ -203,8 +203,8 @@ class ModalManager extends EventEmitter {
 
       const nostrConnect = async (cs?: ConnectionString) => {
         await exec(async () => {
-          const { relay, domain, link, iframeUrl } = cs || {};
-          console.log('nostrConnect', cs, relay, domain, link, iframeUrl);
+          const { relays, domain, link, iframeUrl } = cs || {};
+          console.log('nostrConnect', cs, relays, domain, link, iframeUrl);
 
           if (this.modal) {
             if (iframeUrl) {
@@ -218,7 +218,7 @@ class ModalManager extends EventEmitter {
             if (!cs) this.modal.isLoading = false;
           }
 
-          await this.authNostrService.nostrConnect(relay, { domain, link, iframeUrl });
+          await this.authNostrService.nostrConnect(relays, { domain, link, iframeUrl });
         });
       };
 
