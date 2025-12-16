@@ -152,13 +152,13 @@ class AuthNostrService extends EventEmitter implements Signer {
     return info;
   }
 
-  public async createNostrConnect(relays?: string) {
-    const relayList = relays
+  public async createNostrConnect(relays?: string[]) {
+    /*const relayList = relays
       ? relays
         .split(",")
         .map(r => r.trim().replace(/['"]/g, ""))
         .filter(r => r.length > 0)
-      : [];
+      : [];*/
 
     this.nostrConnectKey = generatePrivateKey();
     this.nostrConnectSecret = Math.random().toString(36).substring(7);
@@ -171,7 +171,7 @@ class AuthNostrService extends EventEmitter implements Signer {
       perms: encodeURIComponent(this.params.optionsModal.perms || ''),
     };
 
-    return `nostrconnect://${pubkey}?image=${meta.icon}&url=${meta.url}&name=${meta.name}&perms=${meta.perms}&secret=${this.nostrConnectSecret}${relayList.length > 0 ? relayList.map((r, i) => `&relay=${r}`) : ""}`;
+    return `nostrconnect://${pubkey}?image=${meta.icon}&url=${meta.url}&name=${meta.name}&perms=${meta.perms}&secret=${this.nostrConnectSecret}${(relays||[]).length > 0 ? (relays||[]).map((r, i) => `&relay=${r}`) : ""}`;
   }
 
   public async getNostrConnectServices(): Promise<[string, ConnectionString[]]> {
