@@ -11,7 +11,8 @@ import { IframeNostrRpc, Nip46Signer, ReadyListener } from './Nip46';
 import { PrivateKeySigner } from './Signer';
 
 const OUTBOX_RELAYS = ['wss://user.kindpag.es', 'wss://purplepag.es', 'wss://relay.nos.social'];
-const DEFAULT_NOSTRCONNECT_RELAYS = ['wss://relay.nsec.app/','wss://ephemeral.snowflare.cc/'];
+const DEFAULT_NOSTRCONNECT_RELAYS = ['wss://relay.nsec.app/', 'wss://ephemeral.snowflare.cc/'];
+const CONNECT_TIMEOUT = 5000;
 const NOSTRCONNECT_APPS: ConnectionString[] = [
   {
     name: 'Nsec.app',
@@ -71,7 +72,7 @@ class AuthNostrService extends EventEmitter implements Signer {
       enableOutboxModel: true,
       explicitRelayUrls: OUTBOX_RELAYS,
     });
-    this.profileNdk.connect();
+    this.profileNdk.connect(CONNECT_TIMEOUT);
 
     this.nip04 = {
       encrypt: this.encrypt04.bind(this),
@@ -144,7 +145,7 @@ class AuthNostrService extends EventEmitter implements Signer {
     // signer learns the remote pubkey
     if (!info.pubkey || !info.signerPubkey) throw new Error('Bad remote pubkey');
 
-  info.bunkerUrl = `bunker://${info.signerPubkey}?${relays.map((r, i) => `${i !== 0 ? '&' : ''}relay=${r}`)}`;
+    info.bunkerUrl = `bunker://${info.signerPubkey}?${relays.map((r, i) => `${i !== 0 ? '&' : ''}relay=${r}`)}`;
 
     // callback
     if (!importConnect) this.onAuth('login', info);
@@ -171,7 +172,7 @@ class AuthNostrService extends EventEmitter implements Signer {
       perms: encodeURIComponent(this.params.optionsModal.perms || ''),
     };
 
-    return `nostrconnect://${pubkey}?image=${meta.icon}&url=${meta.url}&name=${meta.name}&perms=${meta.perms}&secret=${this.nostrConnectSecret}${(relays||[]).length > 0 ? (relays||[]).map((r, i) => `&relay=${r}`) : ""}`;
+    return `nostrconnect://${pubkey}?image=${meta.icon}&url=${meta.url}&name=${meta.name}&perms=${meta.perms}&secret=${this.nostrConnectSecret}${(relays || []).length > 0 ? (relays || []).map((r, i) => `&relay=${r}`) : ""}`;
   }
 
   public async getNostrConnectServices(): Promise<[string, ConnectionString[]]> {
@@ -580,7 +581,7 @@ class AuthNostrService extends EventEmitter implements Signer {
 
         // wait until we connect, otherwise
         // signer won't start properly
-        await this.ndk.connect();
+        await this.ndk.connect(CONNECT_TIMEOUT);
 
         // create and prepare the signer
         const localSigner = new PrivateKeySigner(info.sk!);
@@ -670,17 +671,28 @@ class AuthNostrService extends EventEmitter implements Signer {
   }
 
   public async signEvent(event: any) {
-    if (this.localSigner) {
-      event.pubkey = getPublicKey(this.localSigner.privateKey!);
-      event.id = getEventHash(event);
-      event.sig = await this.localSigner.sign(event);
-    } else {
-      event.pubkey = this.signer?.remotePubkey;
-      event.id = getEventHash(event);
-      event.sig = await this.signer?.sign(event);
-    }
-    console.log('signed', { event });
-    return event;
+    const timeoutMs = 20000;
+
+    const signPromise = (async () => {
+      if (this.localSigner) {
+        event.pubkey = getPublicKey(this.localSigner.privateKey!);
+        event.id = getEventHash(event);
+        event.sig = await this.localSigner.sign(event);
+      } else {
+        event.pubkey = this.signer?.remotePubkey;
+        event.id = getEventHash(event);
+        event.sig = await this.signer?.sign(event);
+      }
+      return event;
+    })();
+
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('Sign timeout')), timeoutMs);
+    });
+
+    const result = await Promise.race([signPromise, timeoutPromise]);
+    console.log('signed', { event: result });
+    return result;
   }
 
   private async codec_call(method: string, pubkey: string, param: string) {
