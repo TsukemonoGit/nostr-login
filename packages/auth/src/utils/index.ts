@@ -102,9 +102,7 @@ export const bunkerUrlToInfo = (bunkerUrl: string, sk = ''): Info => {
 export const isBunkerUrl = (value: string) => value.startsWith('bunker://');
 
 export const getBunkerUrl = async (value: string, optionsModal: NostrLoginOptions) => {
-  if (!value) {
-    return '';
-  }
+  if (!value) return '';
 
   if (isBunkerUrl(value)) {
     return value;
@@ -113,24 +111,28 @@ export const getBunkerUrl = async (value: string, optionsModal: NostrLoginOption
   if (value.includes('@')) {
     const [name, domain] = value.toLocaleLowerCase().split('@');
     const origin = optionsModal.devOverrideBunkerOrigin || `https://${domain}`;
+
     const bunkerUrl = `${origin}/.well-known/nostr.json?name=_`;
-    const userUrl = `${origin}/.well-known/nostr.json?name=${name}`;
-    const bunker = await fetch(bunkerUrl);
-    const bunkerData = await bunker.json();
+    const userUrl   = `${origin}/.well-known/nostr.json?name=${name}`;
+
+    const bunkerRes = await fetch(bunkerUrl);
+    const bunkerData = await bunkerRes.json();
     const bunkerPubkey = bunkerData.names['_'];
-    const bunkerRelays = bunkerData.nip46[bunkerPubkey];
-    const user = await fetch(userUrl);
-    const userData = await user.json();
+    const bunkerRelays: string[] = bunkerData.nip46[bunkerPubkey];
+
+    const userRes = await fetch(userUrl);
+    const userData = await userRes.json();
     const userPubkey = userData.names[name];
-    // console.log({
-    //     bunkerData, userData, bunkerPubkey, bunkerRelays, userPubkey,
-    //     name, domain, origin
-    // })
-    if (!bunkerRelays.length) {
+
+    if (!bunkerRelays || bunkerRelays.length === 0) {
       throw new Error('Bunker relay not provided');
     }
 
-    return `bunker://${userPubkey}?relay=${bunkerRelays[0]}`;
+    const relayParams = bunkerRelays
+      .map(r => `relay=${encodeURIComponent(r)}`)
+      .join('&');
+
+    return `bunker://${userPubkey}?${relayParams}`;
   }
 
   throw new Error('Invalid user name or bunker url');
