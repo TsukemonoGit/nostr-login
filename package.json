@@ -13,6 +13,6 @@
     "@nostr-dev-kit/ndk": "^2.4.0"
   },
   "devDependencies": {
-    "lerna": "^9.0.3"
+    "lerna": "^8.0.2"
   }
 }
