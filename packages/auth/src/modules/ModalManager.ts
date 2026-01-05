@@ -27,7 +27,7 @@ class ModalManager extends EventEmitter {
     if (this.launcherPromise) {
       try {
         await this.launcherPromise;
-      } catch {}
+      } catch { }
       this.launcherPromise = undefined;
     }
   }
@@ -141,7 +141,7 @@ class ModalManager extends EventEmitter {
         }
 
         try {
-          if (!options || options.start) await this.authNostrService.startAuth();
+          if (!options || options.start) this.authNostrService.startAuth();
           await body();
           if (!options || options.end) await done(ok);
         } catch (e: any) {
@@ -401,6 +401,9 @@ class ModalManager extends EventEmitter {
           }
         } else if (userInfo.authMethod === 'extension') {
           await this.extensionService.trySetExtensionForPubkey(userInfo.pubkey);
+          dialog.close();
+        } else if (userInfo.authMethod === ('amber' as any)) {
+          this.authNostrService.setAmber(userInfo);
           dialog.close();
         } else {
           const input = userInfo.bunkerUrl || userInfo.nip05;

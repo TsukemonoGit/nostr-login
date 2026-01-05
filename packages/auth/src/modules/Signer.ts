@@ -1,13 +1,13 @@
-import { NDKPrivateKeySigner, NDKUser } from '@nostr-dev-kit/ndk';
 import { Nip44 } from '../utils/nip44';
-import { getPublicKey } from 'nostr-tools';
+import { getPublicKey, getEventHash, getSignature, nip04 } from 'nostr-tools';
 
-export class PrivateKeySigner extends NDKPrivateKeySigner {
+export class PrivateKeySigner {
   private nip44: Nip44 = new Nip44();
   private _pubkey: string;
+  public privateKey: string;
 
   constructor(privateKey: string) {
-    super(privateKey);
+    this.privateKey = privateKey;
     this._pubkey = getPublicKey(privateKey);
   }
 
@@ -15,11 +15,42 @@ export class PrivateKeySigner extends NDKPrivateKeySigner {
     return this._pubkey;
   }
 
-  encryptNip44(recipient: NDKUser, value: string): Promise<string> {
-    return Promise.resolve(this.nip44.encrypt(this.privateKey!, recipient.pubkey, value));
+  async blockUntilReady() {
+    return Promise.resolve();
   }
 
-  decryptNip44(sender: NDKUser, value: string): Promise<string> {
-    return Promise.resolve(this.nip44.decrypt(this.privateKey!, sender.pubkey, value));
+  async user() {
+    return { pubkey: this.pubkey };
+  }
+
+  async sign(event: any): Promise<string> {
+    // ensure event has created_at
+    if (!event.created_at) event.created_at = Math.floor(Date.now() / 1000);
+    // compute id and signature
+    const id = getEventHash(event as any);
+    event.id = id;
+    const sig = getSignature(event as any, this.privateKey);
+    event.sig = sig;
+    return sig;
+  }
+
+  async encrypt(recipient: any, plaintext: string): Promise<string> {
+    const pubkey = typeof recipient === 'string' ? recipient : recipient.pubkey;
+    return nip04.encrypt(this.privateKey, pubkey, plaintext);
+  }
+
+  async decrypt(sender: any, ciphertext: string): Promise<string> {
+    const pubkey = typeof sender === 'string' ? sender : sender.pubkey;
+    return nip04.decrypt(this.privateKey, pubkey, ciphertext);
+  }
+
+  encryptNip44(recipient: any, value: string): Promise<string> {
+    const pubkey = typeof recipient === 'string' ? recipient : recipient.pubkey;
+    return Promise.resolve(this.nip44.encrypt(this.privateKey, pubkey, value));
+  }
+
+  decryptNip44(sender: any, value: string): Promise<string> {
+    const pubkey = typeof sender === 'string' ? sender : sender.pubkey;
+    return Promise.resolve(this.nip44.decrypt(this.privateKey, pubkey, value));
   }
 }

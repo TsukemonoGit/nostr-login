@@ -1,6 +1,12 @@
 import { Nostr, NostrParams } from './';
 import { EventEmitter } from 'tseep';
 
+declare global {
+  interface Window {
+    nostr?: any;
+  }
+}
+
 class NostrExtensionService extends EventEmitter {
   private params: NostrParams;
   private nostrExtension: any | undefined;

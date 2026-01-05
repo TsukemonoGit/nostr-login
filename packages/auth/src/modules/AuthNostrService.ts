@@ -2,13 +2,16 @@ import { localStorageAddAccount, bunkerUrlToInfo, isBunkerUrl, fetchProfile, get
 import { ConnectionString, Info } from 'nostr-login-components/dist/types/types';
 import { generatePrivateKey, getEventHash, getPublicKey, nip19 } from 'nostr-tools';
 import { NostrLoginAuthOptions, Response } from '../types';
-import NDK, { NDKEvent, NDKNip46Signer, NDKRpcResponse, NDKUser, NostrEvent } from '@nostr-dev-kit/ndk';
+
 import { NostrParams } from './';
 import { EventEmitter } from 'tseep';
 import { Signer } from './Nostr';
 import { Nip44 } from '../utils/nip44';
-import { IframeNostrRpc, Nip46Signer, ReadyListener } from './Nip46';
+import { IframeNostrRpc, Nip46Signer, ReadyListener, RpcResponse } from './Nip46';
+import { Nip46Client } from './nip46/Nip46Client';
+import { Nip46Adapter } from './nip46/Nip46Adapter';
 import { PrivateKeySigner } from './Signer';
+import { AmberDirectSigner } from './AmberDirectSigner';
 
 const OUTBOX_RELAYS = ['wss://user.kindpag.es', 'wss://purplepag.es', 'wss://relay.nos.social'];
 const DEFAULT_NOSTRCONNECT_RELAYS = ['wss://relay.nsec.app/', 'wss://ephemeral.snowflare.cc/'];
@@ -25,7 +28,7 @@ const NOSTRCONNECT_APPS: ConnectionString[] = [
   {
     name: 'Amber',
     img: 'https://raw.githubusercontent.com/greenart7c3/Amber/refs/heads/master/assets/android-icon.svg',
-    link: '<nostrconnect>',
+    link: 'amber',
     relays: DEFAULT_NOSTRCONNECT_RELAYS,
   },
   {
@@ -37,9 +40,8 @@ const NOSTRCONNECT_APPS: ConnectionString[] = [
 ];
 
 class AuthNostrService extends EventEmitter implements Signer {
-  private ndk: NDK;
-  private profileNdk: NDK;
-  private signer: Nip46Signer | null = null;
+  private signer: any = null;
+  private amberSigner: AmberDirectSigner | null = null;
   private localSigner: PrivateKeySigner | null = null;
   private params: NostrParams;
   private signerPromise?: Promise<void>;
@@ -64,15 +66,6 @@ class AuthNostrService extends EventEmitter implements Signer {
   constructor(params: NostrParams) {
     super();
     this.params = params;
-    this.ndk = new NDK({
-      enableOutboxModel: false,
-    });
-
-    this.profileNdk = new NDK({
-      enableOutboxModel: true,
-      explicitRelayUrls: OUTBOX_RELAYS,
-    });
-    this.profileNdk.connect(CONNECT_TIMEOUT);
 
     this.nip04 = {
       encrypt: this.encrypt04.bind(this),
@@ -82,6 +75,96 @@ class AuthNostrService extends EventEmitter implements Signer {
       encrypt: this.encrypt44.bind(this),
       decrypt: this.decrypt44.bind(this),
     };
+
+    setTimeout(() => this.checkAmberResponse(), 100);
+
+    const check = () => {
+      this.checkAmberResponse();
+    };
+
+    window.addEventListener('focus', check);
+    window.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') check();
+    });
+    window.addEventListener('popstate', check);
+    window.addEventListener('hashchange', check);
+
+    // Periodic check as a safety net
+    setInterval(check, 1000);
+
+    window.addEventListener('message', event => {
+      if (event.data && event.data.method === 'amberResponse') {
+        const { id, type, result } = event.data;
+        console.log('Amber response received via message', { id, type, result });
+        this.handleAmberResponse({ id, type, result });
+      }
+    });
+  }
+
+  private checkAmberResponse() {
+    const response = AmberDirectSigner.parseResponse();
+    if (response) {
+      // If we have an opener and it's not the same window, we are in a popup
+      if (window.opener && window.opener !== window) {
+        console.log('Amber response in popup, sending back to opener');
+        window.opener.postMessage({ method: 'amberResponse', ...response }, window.location.origin);
+        window.close();
+        return;
+      }
+
+      this.handleAmberResponse(response);
+    }
+  }
+
+  private handledAmberIds: Set<string> = new Set();
+
+  private handleAmberResponse(response: { id: string; type: string; result: string }) {
+    if (this.handledAmberIds.has(response.id)) return;
+    this.handledAmberIds.add(response.id);
+
+    console.log('Handling Amber response', response);
+
+    // Stop the "Connecting..." spinner
+    this.emit('onAuthUrl', { url: '' });
+
+    // Resolve pending promises if any (for non-reload cases)
+    const resolved = AmberDirectSigner.resolvePending(response.id, response.type, response.result);
+    if (resolved) {
+      console.log('Resolved pending Amber promise via resolvePending');
+    }
+
+    if (response.type === 'get_public_key' || response.type.includes('pub')) {
+      const info: Info = {
+        pubkey: response.result,
+        name: nip19.npubEncode(response.result),
+        authMethod: 'amber' as any,
+        relays: [],
+        signerPubkey: '',
+      };
+      console.log('Amber login success', info);
+      this.onAuth('login', info);
+    }
+
+    // URLクリーンアップをより徹底的に
+    const url = new URL(window.location.href);
+    let changed = false;
+    if (url.searchParams.has('event')) {
+      url.searchParams.delete('event');
+      changed = true;
+    }
+
+    // パス末尾が結果と一致する場合はパスもクリア
+    const pathParts = url.pathname.split('/');
+    if (pathParts.length > 0 && pathParts[pathParts.length - 1] === response.result) {
+      pathParts.pop();
+      url.pathname = pathParts.join('/') || '/';
+      changed = true;
+    }
+
+    if (changed) {
+      console.log('Cleaning up Amber response URL', url.toString());
+      window.history.replaceState({}, '', url.toString());
+    }
   }
 
   public isIframe() {
@@ -92,13 +175,13 @@ class AuthNostrService extends EventEmitter implements Signer {
     if (this.signerPromise) {
       try {
         await this.signerPromise;
-      } catch { }
+      } catch {}
     }
 
     if (this.readyPromise) {
       try {
         await this.readyPromise;
-      } catch { }
+      } catch {}
     }
   }
 
@@ -120,9 +203,8 @@ class AuthNostrService extends EventEmitter implements Signer {
       importConnect?: boolean;
       iframeUrl?: string;
     } = {},
-  ) {
+  ): Promise<Info> {
     relays = relays && relays.length > 0 ? relays : DEFAULT_NOSTRCONNECT_RELAYS;
-
 
     const info: Info = {
       authMethod: 'connect',
@@ -137,7 +219,44 @@ class AuthNostrService extends EventEmitter implements Signer {
     console.log('nostrconnect info', info, link);
 
     // non-iframe flow
-    if (link && !iframeUrl) window.open(link, '_blank', 'width=400,height=700');
+    if (link && !iframeUrl) {
+      if (link === 'amber') {
+        const signer = new AmberDirectSigner();
+        this.amberSigner = signer;
+
+        const id = Math.random().toString(36).substring(7);
+        const url = signer.generateUrl('', 'get_public_key', id);
+
+        // Emit for the "Connecting..." spinner
+        this.emit('onAuthUrl', { url });
+
+        try {
+          const pubkey = await signer.getPublicKey(id);
+          const info: Info = {
+            pubkey,
+            name: nip19.npubEncode(pubkey),
+            authMethod: 'amber' as any,
+            relays: [],
+            signerPubkey: '',
+          };
+          this.onAuth('login', info);
+          return info;
+        } catch (e) {
+          console.log('Amber getPublicKey failed or was blocked', e);
+          // Fallback: wait for onAuth to be called (e.g. via user clicking Continue)
+          return new Promise(resolve => {
+            const handler = (info: Info | null) => {
+              if (info && info.authMethod === ('amber' as any)) {
+                this.off('onUserInfo', handler); // Use onUserInfo as a proxy for onAuth
+                resolve(info);
+              }
+            };
+            this.on('onUserInfo', handler);
+          });
+        }
+      }
+      window.open(link, '_blank', 'width=400,height=700');
+    }
 
     // init nip46 signer
     await this.initSigner(info, { listen: true });
@@ -172,7 +291,7 @@ class AuthNostrService extends EventEmitter implements Signer {
       perms: encodeURIComponent(this.params.optionsModal.perms || ''),
     };
 
-    return `nostrconnect://${pubkey}?image=${meta.icon}&url=${meta.url}&name=${meta.name}&perms=${meta.perms}&secret=${this.nostrConnectSecret}${(relays || []).length > 0 ? (relays || []).map((r, i) => `&relay=${r}`) : ""}`;
+    return `nostrconnect://${pubkey}?image=${meta.icon}&url=${meta.url}&name=${meta.name}&perms=${meta.perms}&secret=${this.nostrConnectSecret}${(relays || []).length > 0 ? (relays || []).map((r, i) => `&relay=${r}`) : ''}`;
   }
 
   public async getNostrConnectServices(): Promise<[string, ConnectionString[]]> {
@@ -246,7 +365,7 @@ class AuthNostrService extends EventEmitter implements Signer {
     this.releaseSigner();
     this.localSigner = new PrivateKeySigner(info.sk!);
 
-    if (signup) await createProfile(info, this.profileNdk, this.localSigner, this.params.optionsModal.signupRelays, this.params.optionsModal.outboxRelays);
+    if (signup) await createProfile(info, this.localSigner, this.params.optionsModal.signupRelays, this.params.optionsModal.outboxRelays);
 
     this.onAuth(signup ? 'signup' : 'login', info);
   }
@@ -299,6 +418,12 @@ class AuthNostrService extends EventEmitter implements Signer {
     await this.endAuth();
   }
 
+  public async setAmber(info: Info) {
+    this.releaseSigner();
+    this.amberSigner = new AmberDirectSigner(info.pubkey);
+    this.onAuth('login', info);
+  }
+
   public async createAccount(nip05: string) {
     const [name, domain] = nip05.split('@');
 
@@ -318,9 +443,7 @@ class AuthNostrService extends EventEmitter implements Signer {
     const userPubkey = await this.signer!.createAccount2({ bunkerPubkey: info.signerPubkey!, name, domain, perms: this.params.optionsModal.perms });
 
     return {
-      bunkerUrl:
-        `bunker://${userPubkey}?` +
-        (info.relays ?? []).map((r: string) => `relay=${encodeURIComponent(r)}`).join('&'),
+      bunkerUrl: `bunker://${userPubkey}?` + (info.relays ?? []).map((r: string) => `relay=${encodeURIComponent(r)}`).join('&'),
       sk: info.sk,
     };
   }
@@ -329,11 +452,7 @@ class AuthNostrService extends EventEmitter implements Signer {
     this.signer = null;
     this.signerErrCallback?.('cancelled');
     this.localSigner = null;
-
-    // disconnect from signer relays
-    for (const r of this.ndk.pool.relays.keys()) {
-      this.ndk.pool.removeRelay(r);
-    }
+    this.amberSigner = null;
   }
 
   public async logout(keepSigner = false) {
@@ -371,14 +490,14 @@ class AuthNostrService extends EventEmitter implements Signer {
     if (info && this.params.userInfo && (info.pubkey !== this.params.userInfo.pubkey || info.authMethod !== this.params.userInfo.authMethod)) {
       const event = new CustomEvent('nlAuth', { detail: { type: 'logout' } });
       console.log('nostr-login auth', event.detail);
-      document.dispatchEvent(event)
+      document.dispatchEvent(event);
     }
 
     this.setUserInfo(info);
 
     if (info) {
       // async profile fetch
-      fetchProfile(info, this.profileNdk).then(p => {
+      fetchProfile(info, info.relays).then(p => {
         if (this.params.userInfo !== info) return;
 
         const userInfo = {
@@ -507,8 +626,8 @@ class AuthNostrService extends EventEmitter implements Signer {
     return !!this.readyCallback;
   }
 
-  public async startAuth() {
-    console.log("startAuth");
+  public startAuth() {
+    console.log('startAuth');
     if (this.readyCallback) throw new Error('Already started');
 
     // start the new promise
@@ -552,7 +671,7 @@ class AuthNostrService extends EventEmitter implements Signer {
     if (this.signerPromise) {
       try {
         await this.signerPromise;
-      } catch { }
+      } catch {}
     }
 
     // we remove support for iframe from nip05 and bunker-url methods,
@@ -571,39 +690,44 @@ class AuthNostrService extends EventEmitter implements Signer {
     this.signerPromise = new Promise<void>(async (ok, err) => {
       this.signerErrCallback = err;
       try {
-        // pre-connect if we're creating the connection (listen|connect) or
-        // not iframe mode
-        if (info.relays && !info.iframeUrl) {
-          for (const r of info.relays) {
-            this.ndk.addExplicitRelay(r, undefined);
-          }
-        }
-
-        // wait until we connect, otherwise
-        // signer won't start properly
-        await this.ndk.connect(CONNECT_TIMEOUT);
-
         // create and prepare the signer
         const localSigner = new PrivateKeySigner(info.sk!);
-        this.signer = new Nip46Signer(this.ndk, localSigner, info.signerPubkey!, iframeOrigin);
 
-        // we should notify the banner the same way as
-        // the onAuthUrl does
-        this.signer.on(`iframeRestart`, async () => {
-          const iframeUrl = info.iframeUrl + (info.iframeUrl!.includes('?') ? '&' : '?') + 'pubkey=' + info.pubkey + '&rebind=' + localSigner.pubkey;
-          this.emit('iframeRestart', { pubkey: info.pubkey, iframeUrl });
-        });
+        if (info.iframeUrl) {
+          // use NDK-free iframe signer implementation (MessagePort + SimplePool)
+          this.signer = new Nip46Signer(localSigner, info.signerPubkey!, iframeOrigin, info.relays || []);
 
-        // OAuth flow
-        // if (!listen) {
-        this.signer.on('authUrl', (url: string) => {
-          console.log('nostr login auth url', url);
+          // we should notify the banner the same way as the onAuthUrl does
+          this.signer.on(`iframeRestart`, async () => {
+            const iframeUrl = info.iframeUrl + (info.iframeUrl!.includes('?') ? '&' : '?') + 'pubkey=' + info.pubkey + '&rebind=' + localSigner.pubkey;
+            this.emit('iframeRestart', { pubkey: info.pubkey, iframeUrl });
+          });
 
-          // notify our UI
-          this.emit('onAuthUrl', { url, iframeUrl: info.iframeUrl, eventToAddAccount });
-        });
-        // }
+          // OAuth flow
+          this.signer.on('authUrl', (url: string) => {
+            console.log('nostr login auth url', url);
 
+            // notify our UI
+            this.emit('onAuthUrl', { url, iframeUrl: info.iframeUrl, eventToAddAccount });
+          });
+        } else {
+          // New SimplePool-based NIP-46 flow
+          const client = new Nip46Client({
+            localPrivateKey: info.sk!,
+            remotePubkey: info.signerPubkey!,
+            relays: info.relays || [],
+            timeoutMs: 30000,
+          });
+
+          const adapter = new Nip46Adapter(client, localSigner);
+          this.signer = adapter;
+
+          // OAuth flow: forward authUrl events
+          this.signer.on('authUrl', (url: string) => {
+            console.log('nostr login auth url', url);
+            this.emit('onAuthUrl', { url, iframeUrl: info.iframeUrl, eventToAddAccount });
+          });
+        }
         if (listen) {
           // nostrconnect: flow
           // wait for the incoming message from signer
@@ -678,6 +802,10 @@ class AuthNostrService extends EventEmitter implements Signer {
         event.pubkey = getPublicKey(this.localSigner.privateKey!);
         event.id = getEventHash(event);
         event.sig = await this.localSigner.sign(event);
+      } else if (this.params.userInfo?.authMethod === ('amber' as any)) {
+        const userInfo = this.params.userInfo!;
+        if (!this.amberSigner) this.amberSigner = new AmberDirectSigner(userInfo.pubkey);
+        return this.amberSigner.signEvent(event);
       } else {
         event.pubkey = this.signer?.remotePubkey;
         event.id = getEventHash(event);
@@ -697,7 +825,7 @@ class AuthNostrService extends EventEmitter implements Signer {
 
   private async codec_call(method: string, pubkey: string, param: string) {
     return new Promise<string>((resolve, reject) => {
-      this.signer!.rpc.sendRequest(this.signer!.remotePubkey!, method, [pubkey, param], 24133, (response: NDKRpcResponse) => {
+      this.signer!.rpc.sendRequest(this.signer!.remotePubkey!, method, [pubkey, param], 24133, (response: RpcResponse) => {
         if (!response.error) {
           resolve(response.result);
         } else {
@@ -709,20 +837,35 @@ class AuthNostrService extends EventEmitter implements Signer {
 
   public async encrypt04(pubkey: string, plaintext: string) {
     if (this.localSigner) {
-      return this.localSigner.encrypt(new NDKUser({ pubkey }), plaintext);
+      return this.localSigner.encrypt(pubkey, plaintext);
+    } else if (this.params.userInfo?.authMethod === ('amber' as any)) {
+      const userInfo = this.params.userInfo!;
+      if (!this.amberSigner) this.amberSigner = new AmberDirectSigner(userInfo.pubkey);
+      return this.amberSigner.encrypt04(pubkey, plaintext);
     } else {
-      return this.signer!.encrypt(new NDKUser({ pubkey }), plaintext);
+      // adapter supports encrypt(pubkey, plaintext)
+      if (this.signer && typeof this.signer.encrypt === 'function') {
+        return this.signer.encrypt(pubkey, plaintext);
+      }
+      // fallback to remote codec via signer RPC
+      return this.codec_call('nip04_encrypt', pubkey, plaintext);
     }
   }
 
   public async decrypt04(pubkey: string, ciphertext: string) {
     if (this.localSigner) {
-      return this.localSigner.decrypt(new NDKUser({ pubkey }), ciphertext);
+      return this.localSigner.decrypt(pubkey, ciphertext);
+    } else if (this.params.userInfo?.authMethod === ('amber' as any)) {
+      const userInfo = this.params.userInfo!;
+      if (!this.amberSigner) this.amberSigner = new AmberDirectSigner(userInfo.pubkey);
+      return this.amberSigner.decrypt04(pubkey, ciphertext);
     } else {
-      // decrypt is broken in ndk v2.3.1, and latest
-      // ndk v2.8.1 doesn't allow to override connect easily,
-      // so we reimplement and fix decrypt here as a temporary fix
+      // If signer supports direct decrypt(pubkey, ciphertext), use it
+      if (this.signer && typeof this.signer.decrypt === 'function') {
+        return this.signer.decrypt(pubkey, ciphertext);
+      }
 
+      // fallback to remote codec via signer RPC
       return this.codec_call('nip04_decrypt', pubkey, ciphertext);
     }
   }
@@ -730,8 +873,12 @@ class AuthNostrService extends EventEmitter implements Signer {
   public async encrypt44(pubkey: string, plaintext: string) {
     if (this.localSigner) {
       return this.nip44Codec.encrypt(this.localSigner.privateKey!, pubkey, plaintext);
+    } else if (this.params.userInfo?.authMethod === ('amber' as any)) {
+      const userInfo = this.params.userInfo!;
+      if (!this.amberSigner) this.amberSigner = new AmberDirectSigner(userInfo.pubkey);
+      return this.amberSigner.encrypt44(pubkey, plaintext);
     } else {
-      // no support of nip44 in ndk yet
+      // no support of nip44 in legacy signer implementation
       return this.codec_call('nip44_encrypt', pubkey, plaintext);
     }
   }
@@ -739,8 +886,12 @@ class AuthNostrService extends EventEmitter implements Signer {
   public async decrypt44(pubkey: string, ciphertext: string) {
     if (this.localSigner) {
       return this.nip44Codec.decrypt(this.localSigner.privateKey!, pubkey, ciphertext);
+    } else if (this.params.userInfo?.authMethod === ('amber' as any)) {
+      const userInfo = this.params.userInfo!;
+      if (!this.amberSigner) this.amberSigner = new AmberDirectSigner(userInfo.pubkey);
+      return this.amberSigner.decrypt44(pubkey, ciphertext);
     } else {
-      // no support of nip44 in ndk yet
+      // no support of nip44 in legacy signer implementation
       return this.codec_call('nip44_decrypt', pubkey, ciphertext);
     }
   }

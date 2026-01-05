@@ -1,6 +1,5 @@
 import { Info, RecentType } from 'nostr-login-components/dist/types/types';
-import NDK, { NDKEvent, NDKRelaySet, NDKSigner, NDKUser } from '@nostr-dev-kit/ndk';
-import { generatePrivateKey } from 'nostr-tools';
+import { generatePrivateKey, SimplePool, getEventHash } from 'nostr-tools';
 import { NostrLoginOptions } from '../types';
 
 const LOCAL_STORE_KEY = '__nostrlogin_nip46';
@@ -29,12 +28,53 @@ export const localStorageRemoveItem = (key: string) => {
   localStorage.removeItem(key);
 };
 
-export const fetchProfile = async (info: Info, profileNdk: NDK) => {
-  const user = new NDKUser({ pubkey: info.pubkey });
+export const fetchProfile = async (info: Info, profileNdkOrRelays?: any) => {
+  // support legacy external profile fetcher (NDK compatibility)
+  if (profileNdkOrRelays && typeof profileNdkOrRelays.fetchEvents === 'function') {
+    try {
+      const user = (profileNdkOrRelays as any).getUser({ pubkey: info.pubkey });
+      user.ndk = profileNdkOrRelays;
+      return await user.fetchProfile();
+    } catch (e) {
+      // fallthrough to SimplePool-based fetch
+    }
+  }
 
-  user.ndk = profileNdk;
+  // fallback: use SimplePool to fetch latest kind:0 metadata for the pubkey
+  const relays = Array.isArray(profileNdkOrRelays) && profileNdkOrRelays.length ? profileNdkOrRelays : DEFAULT_SIGNUP_RELAYS;
+  const pool = new SimplePool();
+  const sub = pool.sub(relays, [{ kinds: [0], authors: [info.pubkey], limit: 1 }]);
 
-  return await user.fetchProfile();
+  return await new Promise(resolve => {
+    const timer = setTimeout(() => {
+      try {
+        sub.unsub();
+      } catch {}
+      resolve(null);
+    }, 3000);
+
+    sub.on('event', (event: any) => {
+      clearTimeout(timer);
+      try {
+        sub.unsub();
+      } catch {}
+      if (!event || !event.content) return resolve(null);
+      try {
+        const profile = JSON.parse(event.content);
+        resolve(profile);
+      } catch (e) {
+        resolve(null);
+      }
+    });
+
+    sub.on('eose', () => {
+      clearTimeout(timer);
+      try {
+        sub.unsub();
+      } catch {}
+      resolve(null);
+    });
+  });
 };
 
 export const prepareSignupRelays = (signupRelays?: string) => {
@@ -46,43 +86,46 @@ export const prepareSignupRelays = (signupRelays?: string) => {
   return relays;
 };
 
-export const createProfile = async (info: Info, profileNdk: NDK, signer: NDKSigner, signupRelays?: string, outboxRelays?: string[]) => {
+export const createProfile = async (info: Info, signer: any, signupRelays?: string, outboxRelays?: string[]) => {
   const meta = {
     name: info.name,
   };
 
-  const profileEvent = new NDKEvent(profileNdk, {
+  const profileEvent: any = {
     kind: 0,
     created_at: Math.floor(Date.now() / 1000),
     pubkey: info.pubkey,
     content: JSON.stringify(meta),
     tags: [],
-  });
+  };
   if (window.location.hostname) profileEvent.tags.push(['client', window.location.hostname]);
 
-  const relaysEvent = new NDKEvent(profileNdk, {
+  const relaysEvent: any = {
     kind: 10002,
     created_at: Math.floor(Date.now() / 1000),
     pubkey: info.pubkey,
     content: '',
     tags: [],
-  });
+  };
 
-  const relays = prepareSignupRelays(signupRelays)
+  const relays = prepareSignupRelays(signupRelays);
   for (const r of relays) {
     relaysEvent.tags.push(['r', r]);
   }
 
-  await profileEvent.sign(signer);
+  // signer is expected to implement sign(event)
+  await signer.sign(profileEvent);
   console.log('signed profile', profileEvent);
-  await relaysEvent.sign(signer);
+  await signer.sign(relaysEvent);
   console.log('signed relays', relaysEvent);
 
   const outboxRelaysFinal = outboxRelays && outboxRelays.length ? outboxRelays : OUTBOX_RELAYS;
 
-  await profileEvent.publish(NDKRelaySet.fromRelayUrls(outboxRelaysFinal, profileNdk));
+  // publish using SimplePool
+  const pool = new SimplePool();
+  await Promise.any(pool.publish(outboxRelaysFinal, profileEvent));
   console.log('published profile', profileEvent);
-  await relaysEvent.publish(NDKRelaySet.fromRelayUrls(outboxRelaysFinal, profileNdk));
+  await Promise.any(pool.publish(outboxRelaysFinal, relaysEvent));
   console.log('published relays', relaysEvent);
 };
 
@@ -113,7 +156,7 @@ export const getBunkerUrl = async (value: string, optionsModal: NostrLoginOption
     const origin = optionsModal.devOverrideBunkerOrigin || `https://${domain}`;
 
     const bunkerUrl = `${origin}/.well-known/nostr.json?name=_`;
-    const userUrl   = `${origin}/.well-known/nostr.json?name=${name}`;
+    const userUrl = `${origin}/.well-known/nostr.json?name=${name}`;
 
     const bunkerRes = await fetch(bunkerUrl);
     const bunkerData = await bunkerRes.json();
@@ -128,9 +171,7 @@ export const getBunkerUrl = async (value: string, optionsModal: NostrLoginOption
       throw new Error('Bunker relay not provided');
     }
 
-    const relayParams = bunkerRelays
-      .map(r => `relay=${encodeURIComponent(r)}`)
-      .join('&');
+    const relayParams = bunkerRelays.map(r => `relay=${encodeURIComponent(r)}`).join('&');
 
     return `bunker://${userPubkey}?${relayParams}`;
   }
@@ -196,6 +237,11 @@ const upgradeInfo = (info: Info | RecentType) => {
 
   if (info.authMethod === 'connect' && !info.signerPubkey) {
     info.signerPubkey = info.pubkey;
+  }
+
+  if (info.authMethod === ('amber' as any)) {
+    if (!info.signerPubkey) info.signerPubkey = '';
+    if (!(info as any).relays) (info as any).relays = [];
   }
 };
 

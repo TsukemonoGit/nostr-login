@@ -122,3 +122,10 @@ export interface Response {
   result?: string;
   error?: string;
 }
+
+
+export interface AmberResponse {
+  id: string;
+  type: string;
+  result: string;
+}

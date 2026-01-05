@@ -148,7 +148,11 @@ export class NostrLoginInitializer {
   }
 
   private openPopup(url: string) {
-    this.popupManager.openPopup(url);
+    if (url.startsWith('nostrsigner:')) {
+      window.open(url, '_blank', 'width=400,height=600');
+    } else {
+      this.popupManager.openPopup(url);
+    }
   }
 
   private async switchAccount(info: Info, signup = false) {
@@ -169,6 +173,8 @@ export class NostrLoginInitializer {
       await this.extensionService.trySetExtensionForPubkey(info.pubkey);
     } else if (info.authMethod === 'connect' && info.sk && info.relays && info.relays[0]) {
       this.authNostrService.setConnect(info);
+    } else if (info.authMethod === ('amber' as any)) {
+      this.authNostrService.setAmber(info);
     } else {
       throw new Error('Bad auth info');
     }
@@ -303,7 +309,7 @@ export class NostrLoginInitializer {
   public setAuth = async (o: NostrLoginAuthOptions) => {
     if (!o.type) throw new Error('Invalid auth event');
     if (o.type !== 'login' && o.type !== 'logout' && o.type !== 'signup') throw new Error('Invalid auth event');
-    if (o.method && o.method !== 'connect' && o.method !== 'extension' && o.method !== 'local' && o.method !== 'otp' && o.method !== 'readOnly')
+    if (o.method && o.method !== 'connect' && o.method !== 'extension' && o.method !== 'local' && o.method !== 'otp' && o.method !== 'readOnly' && o.method !== ('amber' as any))
       throw new Error('Invalid auth event');
 
     if (o.type === 'logout') return this.logout();
