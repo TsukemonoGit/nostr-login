@@ -28,11 +28,13 @@
 
 ### Depends on
 
+- [nl-nip46-relay-settings](../nl-nip46-relay-settings)
 - [button-base](../button-base)
 
 ### Graph
 ```mermaid
 graph TD;
+  nl-connect --> nl-nip46-relay-settings
   nl-connect --> button-base
   nl-auth --> nl-connect
   style nl-connect fill:#f9f,stroke:#333,stroke-width:4px

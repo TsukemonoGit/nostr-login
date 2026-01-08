@@ -32,6 +32,7 @@ export class NlBanner {
   @Event() handleOpenWelcomeModal: EventEmitter<string>;
   @Event() handleConfirmLogout: EventEmitter<string>;
   @Event() handleImportModal: EventEmitter<string>;
+  @Event() handleCancelTimeout: EventEmitter<void>;
 
   @Watch('notify')
   watchNotifyHandler(notify: BannerNotify) {
@@ -209,14 +210,23 @@ export class NlBanner {
               </p>
 
               {this.mode === 'timeout' ? (
-                <a
-                  onClick={() => this.handleClose()}
-                  href={`https://${this.domain}`}
-                  target="_blank"
-                  class="nl-button text-nowrap py-2.5 px-3 w-full inline-flex justify-center items-center gap-x-2 text-sm font-medium rounded-lg disabled:opacity-50 disabled:pointer-events-none dark:focus:outline-none dark:focus:ring-1 dark:focus:ring-gray-600"
-                >
-                  Go to {this.domain}
-                </a>
+                <div>
+                  <a
+                    onClick={() => this.handleClose()}
+                    href={`https://${this.domain}`}
+                    target="_blank"
+                    class="nl-button text-nowrap py-2.5 px-3 w-full inline-flex justify-center items-center gap-x-2 text-sm font-medium rounded-lg disabled:opacity-50 disabled:pointer-events-none dark:focus:outline-none dark:focus:ring-1 dark:focus:ring-gray-600 mb-2"
+                  >
+                    Go to {this.domain}
+                  </a>
+                  <button-base
+                    onClick={() => {
+                      this.handleCancelTimeout.emit();
+                      this.handleClose();
+                    }}
+                    titleBtn="Cancel"
+                  />
+                </div>
               ) : this.mode === 'rebind' ? (
                 <iframe src={this.url} width={'180'} height={'80'} frameBorder={'0'}></iframe>
               ) : (

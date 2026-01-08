@@ -13,10 +13,11 @@
 
 ## Events
 
-| Event          | Description | Type                  |
-| -------------- | ----------- | --------------------- |
-| `nlCheckLogin` |             | `CustomEvent<string>` |
-| `nlLogin`      |             | `CustomEvent<string>` |
+| Event             | Description | Type                    |
+| ----------------- | ----------- | ----------------------- |
+| `nlCheckLogin`    |             | `CustomEvent<string>`   |
+| `nlLogin`         |             | `CustomEvent<string>`   |
+| `nlRelaysChanged` |             | `CustomEvent<string[]>` |
 
 
 ## Dependencies
@@ -27,11 +28,13 @@
 
 ### Depends on
 
+- [nl-nip46-relay-settings](../nl-nip46-relay-settings)
 - [button-base](../button-base)
 
 ### Graph
 ```mermaid
 graph TD;
+  nl-signin-bunker-url --> nl-nip46-relay-settings
   nl-signin-bunker-url --> button-base
   nl-auth --> nl-signin-bunker-url
   style nl-signin-bunker-url fill:#f9f,stroke:#333,stroke-width:4px

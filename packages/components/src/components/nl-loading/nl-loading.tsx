@@ -48,8 +48,8 @@ export class NlLoading {
 
     return (
       <div class="p-4 overflow-y-auto">
-        {title && (<h1 class="nl-title font-bold text-center text-4xl">{title}</h1>)}
-        {text && (<p class="nl-description font-light text-center text-lg pt-2 max-w-96 mx-auto">{text}</p>)}
+        {title && <h1 class="nl-title font-bold text-center text-4xl">{title}</h1>}
+        {text && <p class="nl-description font-light text-center text-lg pt-2 max-w-96 mx-auto">{text}</p>}
         {!state.njumpIframe && !state.authUrl && state.isLoading && (
           <div class="mt-10 mb-10 ml-auto mr-auto w-20">
             <span
@@ -70,10 +70,10 @@ export class NlLoading {
         )}
         {state.njumpIframe && (
           <div class="mt-3 ml-auto mr-auto flex justify-center">
-            <iframe srcdoc={state.njumpIframe} width="600px" style={{ border: '0', height: "80vh", borderRadius: "8px" }}></iframe>
+            <iframe srcdoc={state.njumpIframe} width="600px" style={{ border: '0', height: '80vh', borderRadius: '8px' }}></iframe>
           </div>
         )}
-        {!showIframe && showButton && (
+        {showButton && (
           <div class="mt-3 ml-auto mr-auto w-72">
             <button-base
               onClick={e => {

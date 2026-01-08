@@ -1,6 +1,6 @@
 {
-  "name": "nostr-login",
-  "version": "1.7.11",
+  "name": "@konemono/nostr-login",
+  "version": "1.10.16",
   "description": "",
   "main": "./dist/index.esm.js",
   "types": "./dist/index.d.ts",

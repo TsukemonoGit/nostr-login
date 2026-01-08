@@ -36,7 +36,7 @@ export class NlConnect {
   }
 
   handleConnectionString() {
-    this.handleChangeScreen(CURRENT_MODULE.CONNECTION_STRING)
+    this.handleChangeScreen(CURRENT_MODULE.CONNECTION_STRING);
   }
 
   render() {
@@ -91,6 +91,16 @@ export class NlConnect {
         <div class="ps-4 pe-4 overflow-y-auto">
           <p class="nl-error font-light text-center text-sm max-w-96 mx-auto">{state.error}</p>
         </div>
+
+        <div class="max-w-72 mx-auto">
+          <nl-nip46-relay-settings
+            defaultRelays={state.customNip46Relays}
+            onNlRelaysChanged={e => {
+              state.customNip46Relays = e.detail;
+            }}
+          />
+        </div>
+
         <div class="max-w-52 mx-auto pb-5">
           {(this.allowAuthMethod('connect') || this.allowAuthMethod('readOnly')) && (
             <div class="flex justify-center">

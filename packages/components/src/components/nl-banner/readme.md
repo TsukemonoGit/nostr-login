@@ -22,6 +22,7 @@
 
 | Event                             | Description | Type                  |
 | --------------------------------- | ----------- | --------------------- |
+| `handleCancelTimeout`             |             | `CustomEvent<void>`   |
 | `handleConfirmLogout`             |             | `CustomEvent<string>` |
 | `handleImportModal`               |             | `CustomEvent<string>` |
 | `handleLoginBanner`               |             | `CustomEvent<string>` |

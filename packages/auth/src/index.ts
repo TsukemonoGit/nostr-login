@@ -145,6 +145,12 @@ export class NostrLoginInitializer {
     this.bannerManager.on('launch', (startScreen?: StartScreens) => {
       this.launch(startScreen);
     });
+
+    this.bannerManager.on('cancelTimeout', () => {
+      this.authNostrService.cancelSignerInit();
+      this.processManager.cancelAllPendingCalls();
+      this.bannerManager.onCallEnd();
+    });
   }
 
   private openPopup(url: string) {
@@ -322,7 +328,7 @@ export class NostrLoginInitializer {
   };
 
   public cancelNeedAuth = () => {
-    console.log("cancelNeedAuth");
+    console.log('cancelNeedAuth');
     this.fulfillCustomLaunchPromise();
     this.authNostrService.cancelNostrConnect();
   };

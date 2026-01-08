@@ -4,9 +4,25 @@ import { CALL_TIMEOUT } from '../const';
 class ProcessManager extends EventEmitter {
   private callCount: number = 0;
   private callTimer: NodeJS.Timeout | undefined;
+  private pendingCalls: Map<number, { reject: (reason?: any) => void }> = new Map();
+  private callIdCounter: number = 0;
 
   constructor() {
     super();
+  }
+
+  public cancelAllPendingCalls() {
+    for (const [id, { reject }] of this.pendingCalls.entries()) {
+      reject(new Error('Cancelled by user'));
+    }
+    this.pendingCalls.clear();
+
+    // タイマーとカウントをリセットして次の署名要求に備える
+    if (this.callTimer) {
+      clearTimeout(this.callTimer);
+      this.callTimer = undefined;
+    }
+    this.callCount = 0;
   }
 
   public onAuthUrl() {
@@ -34,11 +50,22 @@ class ProcessManager extends EventEmitter {
 
     this.callCount++;
 
+    const callId = this.callIdCounter++;
     let error;
     let result;
 
     try {
-      result = await cb();
+      result = await new Promise<T>(async (resolve, reject) => {
+        this.pendingCalls.set(callId, { reject });
+        try {
+          const res = await cb();
+          this.pendingCalls.delete(callId);
+          resolve(res);
+        } catch (e) {
+          this.pendingCalls.delete(callId);
+          reject(e);
+        }
+      });
     } catch (e) {
       error = e;
     }

@@ -101,6 +101,9 @@ export namespace Components {
     interface NlLoginStatus {
         "info": RecentType | Info | undefined;
     }
+    interface NlNip46RelaySettings {
+        "defaultRelays": string[];
+    }
     interface NlOtpMigrate {
         "services": ConnectionString[];
         "textImport": string;
@@ -198,6 +201,10 @@ export interface NlLocalSignupCustomEvent<T> extends CustomEvent<T> {
     detail: T;
     target: HTMLNlLocalSignupElement;
 }
+export interface NlNip46RelaySettingsCustomEvent<T> extends CustomEvent<T> {
+    detail: T;
+    target: HTMLNlNip46RelaySettingsElement;
+}
 export interface NlOtpMigrateCustomEvent<T> extends CustomEvent<T> {
     detail: T;
     target: HTMLNlOtpMigrateElement;
@@ -272,6 +279,7 @@ declare global {
         "handleOpenWelcomeModal": string;
         "handleConfirmLogout": string;
         "handleImportModal": string;
+        "handleCancelTimeout": void;
     }
     interface HTMLNlBannerElement extends Components.NlBanner, HTMLStencilElement {
         addEventListener<K extends keyof HTMLNlBannerElementEventMap>(type: K, listener: (this: HTMLNlBannerElement, ev: NlBannerCustomEvent<HTMLNlBannerElementEventMap[K]>) => any, options?: boolean | AddEventListenerOptions): void;
@@ -443,6 +451,23 @@ declare global {
         prototype: HTMLNlLoginStatusElement;
         new (): HTMLNlLoginStatusElement;
     };
+    interface HTMLNlNip46RelaySettingsElementEventMap {
+        "nlRelaysChanged": string[];
+    }
+    interface HTMLNlNip46RelaySettingsElement extends Components.NlNip46RelaySettings, HTMLStencilElement {
+        addEventListener<K extends keyof HTMLNlNip46RelaySettingsElementEventMap>(type: K, listener: (this: HTMLNlNip46RelaySettingsElement, ev: NlNip46RelaySettingsCustomEvent<HTMLNlNip46RelaySettingsElementEventMap[K]>) => any, options?: boolean | AddEventListenerOptions): void;
+        addEventListener<K extends keyof DocumentEventMap>(type: K, listener: (this: Document, ev: DocumentEventMap[K]) => any, options?: boolean | AddEventListenerOptions): void;
+        addEventListener<K extends keyof HTMLElementEventMap>(type: K, listener: (this: HTMLElement, ev: HTMLElementEventMap[K]) => any, options?: boolean | AddEventListenerOptions): void;
+        addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions): void;
+        removeEventListener<K extends keyof HTMLNlNip46RelaySettingsElementEventMap>(type: K, listener: (this: HTMLNlNip46RelaySettingsElement, ev: NlNip46RelaySettingsCustomEvent<HTMLNlNip46RelaySettingsElementEventMap[K]>) => any, options?: boolean | EventListenerOptions): void;
+        removeEventListener<K extends keyof DocumentEventMap>(type: K, listener: (this: Document, ev: DocumentEventMap[K]) => any, options?: boolean | EventListenerOptions): void;
+        removeEventListener<K extends keyof HTMLElementEventMap>(type: K, listener: (this: HTMLElement, ev: HTMLElementEventMap[K]) => any, options?: boolean | EventListenerOptions): void;
+        removeEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions): void;
+    }
+    var HTMLNlNip46RelaySettingsElement: {
+        prototype: HTMLNlNip46RelaySettingsElement;
+        new (): HTMLNlNip46RelaySettingsElement;
+    };
     interface HTMLNlOtpMigrateElementEventMap {
         "nlImportAccount": ConnectionString;
     }
@@ -517,6 +542,7 @@ declare global {
     interface HTMLNlSigninBunkerUrlElementEventMap {
         "nlLogin": string;
         "nlCheckLogin": string;
+        "nlRelaysChanged": string[];
     }
     interface HTMLNlSigninBunkerUrlElement extends Components.NlSigninBunkerUrl, HTMLStencilElement {
         addEventListener<K extends keyof HTMLNlSigninBunkerUrlElementEventMap>(type: K, listener: (this: HTMLNlSigninBunkerUrlElement, ev: NlSigninBunkerUrlCustomEvent<HTMLNlSigninBunkerUrlElementEventMap[K]>) => any, options?: boolean | AddEventListenerOptions): void;
@@ -650,6 +676,7 @@ declare global {
         "nl-loading": HTMLNlLoadingElement;
         "nl-local-signup": HTMLNlLocalSignupElement;
         "nl-login-status": HTMLNlLoginStatusElement;
+        "nl-nip46-relay-settings": HTMLNlNip46RelaySettingsElement;
         "nl-otp-migrate": HTMLNlOtpMigrateElement;
         "nl-previously-logged": HTMLNlPreviouslyLoggedElement;
         "nl-select": HTMLNlSelectElement;
@@ -705,6 +732,7 @@ declare namespace LocalJSX {
         "isLoading"?: boolean;
         "isOpen"?: boolean;
         "notify"?: BannerNotify | null;
+        "onHandleCancelTimeout"?: (event: NlBannerCustomEvent<void>) => void;
         "onHandleConfirmLogout"?: (event: NlBannerCustomEvent<string>) => void;
         "onHandleImportModal"?: (event: NlBannerCustomEvent<string>) => void;
         "onHandleLoginBanner"?: (event: NlBannerCustomEvent<string>) => void;
@@ -780,6 +808,10 @@ declare namespace LocalJSX {
     interface NlLoginStatus {
         "info"?: RecentType | Info | undefined;
     }
+    interface NlNip46RelaySettings {
+        "defaultRelays"?: string[];
+        "onNlRelaysChanged"?: (event: NlNip46RelaySettingsCustomEvent<string[]>) => void;
+    }
     interface NlOtpMigrate {
         "onNlImportAccount"?: (event: NlOtpMigrateCustomEvent<ConnectionString>) => void;
         "services"?: ConnectionString[];
@@ -813,6 +845,7 @@ declare namespace LocalJSX {
         "description"?: string;
         "onNlCheckLogin"?: (event: NlSigninBunkerUrlCustomEvent<string>) => void;
         "onNlLogin"?: (event: NlSigninBunkerUrlCustomEvent<string>) => void;
+        "onNlRelaysChanged"?: (event: NlSigninBunkerUrlCustomEvent<string[]>) => void;
         "titleLogin"?: string;
     }
     interface NlSigninConnectionString {
@@ -875,6 +908,7 @@ declare namespace LocalJSX {
         "nl-loading": NlLoading;
         "nl-local-signup": NlLocalSignup;
         "nl-login-status": NlLoginStatus;
+        "nl-nip46-relay-settings": NlNip46RelaySettings;
         "nl-otp-migrate": NlOtpMigrate;
         "nl-previously-logged": NlPreviouslyLogged;
         "nl-select": NlSelect;
@@ -908,6 +942,7 @@ declare module "@stencil/core" {
             "nl-loading": LocalJSX.NlLoading & JSXBase.HTMLAttributes<HTMLNlLoadingElement>;
             "nl-local-signup": LocalJSX.NlLocalSignup & JSXBase.HTMLAttributes<HTMLNlLocalSignupElement>;
             "nl-login-status": LocalJSX.NlLoginStatus & JSXBase.HTMLAttributes<HTMLNlLoginStatusElement>;
+            "nl-nip46-relay-settings": LocalJSX.NlNip46RelaySettings & JSXBase.HTMLAttributes<HTMLNlNip46RelaySettingsElement>;
             "nl-otp-migrate": LocalJSX.NlOtpMigrate & JSXBase.HTMLAttributes<HTMLNlOtpMigrateElement>;
             "nl-previously-logged": LocalJSX.NlPreviouslyLogged & JSXBase.HTMLAttributes<HTMLNlPreviouslyLoggedElement>;
             "nl-select": LocalJSX.NlSelect & JSXBase.HTMLAttributes<HTMLNlSelectElement>;

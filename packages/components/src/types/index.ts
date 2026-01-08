@@ -76,7 +76,7 @@ export interface ConnectionString {
   name: string;
   img: string;
   link: string;
-  relay: string;
+  relay?: string; // Legacy property, no longer used
   domain?: string;
   canImport?: boolean;
   iframeUrl?: string;

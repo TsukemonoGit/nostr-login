@@ -15,6 +15,7 @@ class ModalManager extends EventEmitter {
   private accounts: Info[] = [];
   private recents: RecentType[] = [];
   private opt?: NostrLoginOptions;
+  private customNip46Relays: string[] = ['wss://relay.nsec.app/', 'wss://ephemeral.snowflare.cc/'];
 
   constructor(params: NostrParams, authNostrService: AuthNostrService, extensionManager: NostrExtensionService) {
     super();
@@ -91,7 +92,7 @@ class ModalManager extends EventEmitter {
     this.modal.isLoadingExtension = false;
     this.modal.isLoading = false;
 
-    [this.modal.connectionString, this.modal.connectionStringServices] = await this.authNostrService.getNostrConnectServices();
+    [this.modal.connectionString, this.modal.connectionStringServices] = await this.authNostrService.getNostrConnectServices(this.customNip46Relays);
 
     dialog.appendChild(this.modal);
     document.body.appendChild(dialog);
@@ -161,7 +162,7 @@ class ModalManager extends EventEmitter {
           const bunkerUrl = await getBunkerUrl(name, this.params.optionsModal);
 
           // connect to bunker by url
-          await this.authNostrService.authNip46('login', { name, bunkerUrl, domain });
+          await this.authNostrService.authNip46('login', { name, bunkerUrl, domain, customRelays: this.customNip46Relays });
         });
       };
 
@@ -193,7 +194,7 @@ class ModalManager extends EventEmitter {
             // we pass the link down to iframe so it could open it
             this.modal.authUrl = cs.link;
             this.modal.iframeUrl = iframeUrl;
-            this.modal.isLoading = false;
+            // Don't set isLoading = false here, let exec handle it
             console.log('nostrconnect authUrl', this.modal.authUrl, this.modal.iframeUrl);
           }
 
@@ -206,19 +207,15 @@ class ModalManager extends EventEmitter {
           const { relay, domain, link, iframeUrl } = cs || {};
           console.log('nostrConnect', cs, relay, domain, link, iframeUrl);
 
-          if (this.modal) {
-            if (iframeUrl) {
-              // we pass the link down to iframe so it could open it
-              this.modal.authUrl = link;
-              this.modal.iframeUrl = iframeUrl;
-              this.modal.isLoading = false;
-              console.log('nostrconnect authUrl', this.modal.authUrl, this.modal.iframeUrl);
-            }
-
-            if (!cs) this.modal.isLoading = false;
+          if (this.modal && iframeUrl) {
+            // we pass the link down to iframe so it could open it
+            this.modal.authUrl = link;
+            this.modal.iframeUrl = iframeUrl;
+            // Don't set isLoading = false here, let exec handle it
+            console.log('nostrconnect authUrl', this.modal.authUrl, this.modal.iframeUrl);
           }
 
-          await this.authNostrService.nostrConnect(relay, { domain, link, iframeUrl });
+          await this.authNostrService.nostrConnect(relay, { domain, link, iframeUrl, customRelays: this.customNip46Relays });
         });
       };
 
@@ -328,6 +325,15 @@ class ModalManager extends EventEmitter {
 
       this.modal.addEventListener('nlLogin', (event: any) => {
         login(event.detail);
+      });
+
+      this.modal.addEventListener('nlRelaysChanged', async (event: any) => {
+        this.customNip46Relays = event.detail;
+        console.log('Custom Nip46 relays updated:', this.customNip46Relays);
+        // Regenerate connection services with new relays
+        if (this.modal) {
+          [this.modal.connectionString, this.modal.connectionStringServices] = await this.authNostrService.getNostrConnectServices(this.customNip46Relays);
+        }
       });
 
       this.modal.addEventListener('nlSignup', (event: any) => {
@@ -529,7 +535,8 @@ class ModalManager extends EventEmitter {
           this.modal.isLoading = false;
         }
 
-        // this.authNostrService.cancelListenNostrConnect();
+        // キャンセル処理を呼び出す
+        this.authNostrService.cancelSignerInit();
 
         dialog.close();
         err(new Error('Cancelled'));

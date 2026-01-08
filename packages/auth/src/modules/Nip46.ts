@@ -1,6 +1,12 @@
 import NDK, { NDKEvent, NDKFilter, NDKNip46Signer, NDKNostrRpc, NDKRpcRequest, NDKRpcResponse, NDKSubscription, NDKSubscriptionCacheUsage, NostrEvent } from '@nostr-dev-kit/ndk';
 import { validateEvent, verifySignature } from 'nostr-tools';
 import { PrivateKeySigner } from './Signer';
+import { NIP46_REQUEST_TIMEOUT, NIP46_CONNECT_TIMEOUT } from '../const';
+
+// タイムアウト付きPromiseラッパー
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, errorMessage: string): Promise<T> {
+  return Promise.race([promise, new Promise<T>((_, reject) => setTimeout(() => reject(new Error(errorMessage)), timeoutMs))]);
+}
 
 class NostrRpc extends NDKNostrRpc {
   protected _ndk: NDK;
@@ -8,11 +14,15 @@ class NostrRpc extends NDKNostrRpc {
   protected requests: Set<string> = new Set();
   private sub?: NDKSubscription;
   protected _useNip44: boolean = false;
+  private reconnectAttempts: number = 0;
+  private maxReconnectAttempts: number = 3;
+  private reconnectDelay: number = 2000;
 
   public constructor(ndk: NDK, signer: PrivateKeySigner) {
     super(ndk, signer, ndk.debug.extend('nip46:signer:rpc'));
     this._ndk = ndk;
     this._signer = signer;
+    this.setupConnectionMonitoring();
   }
 
   public async subscribe(filter: NDKFilter): Promise<NDKSubscription> {
@@ -122,6 +132,104 @@ class NostrRpc extends NDKNostrRpc {
     });
   }
 
+  // タイムアウト対応のconnect
+  public async connectWithTimeout(pubkey: string, token?: string, perms?: string, timeoutMs: number = NIP46_CONNECT_TIMEOUT): Promise<void> {
+    return withTimeout(this.connect(pubkey, token, perms), timeoutMs, `Connection timeout after ${timeoutMs}ms`);
+  }
+
+  // タイムアウト対応のsendRequest
+  public async sendRequestWithTimeout(
+    remotePubkey: string,
+    method: string,
+    params: string[] = [],
+    kind = 24133,
+    timeoutMs: number = NIP46_REQUEST_TIMEOUT,
+  ): Promise<NDKRpcResponse> {
+    return withTimeout(
+      new Promise<NDKRpcResponse>((resolve, reject) => {
+        this.sendRequest(remotePubkey, method, params, kind, response => {
+          if (response.error) {
+            reject(new Error(response.error));
+          } else {
+            resolve(response);
+          }
+        });
+      }),
+      timeoutMs,
+      `Request timeout after ${timeoutMs}ms for method: ${method}`,
+    );
+  }
+
+  // 接続監視のセットアップ
+  private setupConnectionMonitoring() {
+    // アプリがフォアグラウンドに戻ったときの処理
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', async () => {
+        if (document.visibilityState === 'visible') {
+          console.log('App visible, checking relay connections...');
+          await this.ensureConnected();
+        }
+      });
+    }
+
+    // オンライン/オフライン検知
+    if (typeof window !== 'undefined') {
+      window.addEventListener('online', async () => {
+        console.log('Network online, reconnecting relays...');
+        await this.reconnect();
+      });
+    }
+  }
+
+  // 接続を確認して必要なら再接続
+  private async ensureConnected(): Promise<void> {
+    const connectedRelays = Array.from(this._ndk.pool.relays.values()).filter(r => r.status === 1); // 1 = CONNECTED
+
+    if (connectedRelays.length === 0) {
+      console.log('No connected relays, attempting reconnection...');
+      await this.reconnect();
+    }
+  }
+
+  // 再接続処理
+  protected async reconnect(): Promise<void> {
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      console.error('Max reconnection attempts reached');
+      this.emit('reconnectFailed');
+      return;
+    }
+
+    this.reconnectAttempts++;
+    console.log(`Reconnection attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts}`);
+
+    try {
+      // サブスクリプションを停止
+      if (this.sub) {
+        this.sub.stop();
+      }
+
+      // 少し待ってから再接続
+      await new Promise(resolve => setTimeout(resolve, this.reconnectDelay));
+
+      // 再接続
+      await this._ndk.connect();
+
+      // サブスクリプションを再開
+      if (this.sub) {
+        await this.sub.start();
+      }
+
+      this.reconnectAttempts = 0;
+      this.emit('reconnected');
+      console.log('Successfully reconnected to relays');
+    } catch (e) {
+      console.error('Reconnection failed:', e);
+
+      // リトライ
+      setTimeout(() => this.reconnect(), this.reconnectDelay * this.reconnectAttempts);
+    }
+  }
+
   protected getId(): string {
     return Math.random().toString(36).substring(7);
   }
@@ -134,7 +242,7 @@ class NostrRpc extends NDKNostrRpc {
 
     // create and sign request
     const event = await this.createRequestEvent(id, remotePubkey, method, params, kind);
-    console.log("sendRequest", { event, method, remotePubkey, params });
+    console.log('sendRequest', { event, method, remotePubkey, params });
 
     // send to relays
     await event.publish();
@@ -198,6 +306,9 @@ export class IframeNostrRpc extends NostrRpc {
   private peerOrigin?: string;
   private iframePort?: MessagePort;
   private iframeRequests = new Map<string, { id: string; pubkey: string }>();
+  private heartbeatInterval?: number;
+  private lastResponseTime: number = Date.now();
+  private heartbeatTimeoutMs: number = 30000; // 30秒応答がなければ再接続
 
   public constructor(ndk: NDK, localSigner: PrivateKeySigner, iframePeerOrigin?: string) {
     super(ndk, localSigner);
@@ -218,10 +329,32 @@ export class IframeNostrRpc extends NostrRpc {
     );
   }
 
+  // ハートビート開始
+  private startHeartbeat() {
+    this.stopHeartbeat();
+
+    this.heartbeatInterval = window.setInterval(async () => {
+      const timeSinceLastResponse = Date.now() - this.lastResponseTime;
+
+      if (timeSinceLastResponse > this.heartbeatTimeoutMs) {
+        console.warn('No response from relay for too long, reconnecting...');
+        await this.reconnect();
+      }
+    }, 10000); // 10秒ごとにチェック
+  }
+
+  private stopHeartbeat() {
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = undefined;
+    }
+  }
+
   public setWorkerIframePort(port: MessagePort) {
     if (!this.peerOrigin) throw new Error('Unexpected iframe port');
 
     this.iframePort = port;
+    this.startHeartbeat();
 
     // to make sure Chrome doesn't terminate the channel
     setInterval(() => {
@@ -246,6 +379,8 @@ export class IframeNostrRpc extends NostrRpc {
         if (!verifySignature(event)) throw new Error('Invalid event signature from iframe');
         const nevent = new NDKEvent(this._ndk, event);
         const parsedEvent = await this.parseEvent(nevent);
+        // レスポンス受信時にタイムスタンプを更新
+        this.lastResponseTime = Date.now();
         // we're only implementing client-side rpc
         if (!(parsedEvent as NDKRpcRequest).method) {
           console.log('parsed response', parsedEvent);
@@ -359,7 +494,7 @@ export class Nip46Signer extends NDKNip46Signer {
   }
 
   private async setSignerPubkey(signerPubkey: string, sameAsUser: boolean = false) {
-    console.log("setSignerPubkey", signerPubkey);
+    console.log('setSignerPubkey', signerPubkey);
 
     // ensure it's set
     this.remotePubkey = signerPubkey;
@@ -381,14 +516,22 @@ export class Nip46Signer extends NDKNip46Signer {
       return;
     }
 
-    this._userPubkey = await new Promise<string>((ok, err) => {
-      if (!this.remotePubkey) throw new Error('Signer pubkey not set');
+    this._userPubkey = await withTimeout(
+      new Promise<string>((ok, err) => {
+        if (!this.remotePubkey) throw new Error('Signer pubkey not set');
 
-      console.log("get_public_key", this.remotePubkey);
-      this._rpc.sendRequest(this.remotePubkey, 'get_public_key', [], 24133, (response: NDKRpcResponse) => {
-        ok(response.result);
-      });
-    });
+        console.log('get_public_key', this.remotePubkey);
+        this._rpc.sendRequest(this.remotePubkey, 'get_public_key', [], 24133, (response: NDKRpcResponse) => {
+          if (response.error) {
+            err(new Error(response.error));
+          } else {
+            ok(response.result);
+          }
+        });
+      }),
+      NIP46_REQUEST_TIMEOUT,
+      'Timeout getting public key',
+    );
   }
 
   public async listen(nostrConnectSecret: string) {
@@ -398,7 +541,7 @@ export class Nip46Signer extends NDKNip46Signer {
 
   public async connect(token?: string, perms?: string) {
     if (!this.remotePubkey) throw new Error('No signer pubkey');
-    await this._rpc.connect(this.remotePubkey, token, perms);
+    await (this._rpc as any).connectWithTimeout(this.remotePubkey, token, perms, NIP46_CONNECT_TIMEOUT);
     await this.setSignerPubkey(this.remotePubkey);
   }
 

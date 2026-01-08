@@ -125,6 +125,10 @@ class BannerManager extends EventEmitter {
       }
     });
 
+    this.banner.addEventListener('handleCancelTimeout', () => {
+      this.emit('cancelTimeout');
+    });
+
     // this.banner.addEventListener('handleRetryConfirmBanner', () => {
     //   const url = this.listNotifies.pop();
     //   // FIXME go to nip05 domain?
