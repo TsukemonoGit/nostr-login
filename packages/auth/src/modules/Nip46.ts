@@ -149,7 +149,7 @@ class NostrRpc extends NDKNostrRpc {
   }
 
   // タイムアウト対応のping
-  public async pingWithTimeout(remotePubkey: string, timeoutMs: number = 10000): Promise<void> {
+  public async pingWithTimeout(remotePubkey: string, timeoutMs: number = 3000): Promise<void> {
     return withTimeout(this.ping(remotePubkey), timeoutMs, `Ping timeout after ${timeoutMs}ms`);
   }
 
@@ -407,7 +407,10 @@ export class Nip46Signer extends NDKNip46Signer {
     this._remotePubkey = value;
   }
 
-  // 接続確認（必要時のみping）
+  // Nip46.tsのNip46Signerクラス内
+  // 接続確認（必要時のみping リトライ付き 最大10秒）
+  // リトライ回数: 2回（計3回試行）
+  //合計最大時間: 2秒(ping) × 3回 + 2秒(待機) × 2回 = 10秒
   private async ensureConnection(retries: number = 2): Promise<void> {
     if (!this._remotePubkey) return;
 
@@ -420,7 +423,7 @@ export class Nip46Signer extends NDKNip46Signer {
 
     for (let i = 0; i <= retries; i++) {
       try {
-        await this._rpc.pingWithTimeout(this._remotePubkey, 10000);
+        await this._rpc.pingWithTimeout(this._remotePubkey, 2000); // 2秒タイムアウト
         this.lastPingTime = now;
         console.log('Connection check OK');
         return;
@@ -430,8 +433,8 @@ export class Nip46Signer extends NDKNip46Signer {
           throw new Error('NIP-46 connection lost');
         }
 
-        const delay = Math.min(1000 * Math.pow(2, i), 5000);
-        console.log(`Ping failed, retrying in ${delay}ms...`);
+        const delay = 2000; // 2秒間隔で再送
+        console.log(`Ping failed (${i + 1}/${retries + 1}), retrying in ${delay}ms...`);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
