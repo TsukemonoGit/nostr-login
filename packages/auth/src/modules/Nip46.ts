@@ -404,8 +404,9 @@ export class Nip46Signer extends NDKNip46Signer {
     return this._userPubkey;
   }
 
-  // ★ 修正: 接続確認のみ実施、再接続は行わない
-  private async ensureConnection(): Promise<void> {
+ // ★ 修正: 接続確認のみ実施、再接続は行わない
+  // ★ public化して外部から呼び出し可能にする
+  public async ensureConnection(): Promise<void> {
     if (!this.remotePubkey) return;
 
     const now = Date.now();
@@ -544,12 +545,17 @@ export class Nip46Signer extends NDKNip46Signer {
     return super.decrypt(sender, value);
   }
 
-  public async createAccount2({ bunkerPubkey, name, domain, perms = '' }: { bunkerPubkey: string; name: string; domain: string; perms?: string }) {
+public async createAccount2({ bunkerPubkey, name, domain, perms = '' }: { bunkerPubkey: string; name: string; domain: string; perms?: string }) {
     const params = [name, domain, '', perms];
 
-    const r = await new Promise<NDKRpcResponse>(ok => {
-      this.rpc.sendRequest(bunkerPubkey, 'create_account', params, undefined, ok);
-    });
+  // ★ 追加: 接続確認
+  if (this.remotePubkey === bunkerPubkey) {
+    await this.ensureConnection();
+  }
+
+  const r = await new Promise<NDKRpcResponse>(ok => {
+    this.rpc.sendRequest(bunkerPubkey, 'create_account', params, undefined, ok);
+  });
 
     console.log('create_account pubkey', r);
     if (r.result === 'error') {
