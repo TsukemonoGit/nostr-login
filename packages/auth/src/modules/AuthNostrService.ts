@@ -32,6 +32,7 @@ const NOSTRCONNECT_APPS: ConnectionString[] = [
   },
 ];
 
+
 class AuthNostrService extends EventEmitter implements Signer {
   private ndk: NDK;
   private profileNdk: NDK;
@@ -48,6 +49,12 @@ class AuthNostrService extends EventEmitter implements Signer {
   private nostrConnectSecret: string = '';
   private iframe?: HTMLIFrameElement;
   private starterReady?: ReadyListener;
+  // ★ 追加: 再接続関連のプロパティ
+  private reconnectAttempts: number = 0;
+  private readonly MAX_RECONNECT_ATTEMPTS = 3;
+  private currentInfo?: Info;
+  private isReconnecting: boolean = false;
+
 
   nip04: {
     encrypt: (pubkey: string, plaintext: string) => Promise<string>;
@@ -594,116 +601,165 @@ class AuthNostrService extends EventEmitter implements Signer {
   }
 
   private async initSignerInternal(info: Info, listen: boolean, connect: boolean, eventToAddAccount: boolean, resolve: () => void) {
-    // pre-connect if we're creating the connection (listen|connect) or
-    // not iframe mode
+     // リレー接続
     if (info.relays && !info.iframeUrl) {
       for (const r of info.relays) {
         this.ndk.addExplicitRelay(r, undefined);
       }
     }
 
-    // wait until we connect, otherwise
-    // signer won't start properly
     await this.ndk.connect();
 
-    // create and prepare the signer
     const localSigner = new PrivateKeySigner(info.sk!);
-    this.signer = new Nip46Signer(this.ndk, localSigner, info.signerPubkey!, info.iframeUrl ? new URL(info.iframeUrl!).origin : undefined);
+    this.signer = new Nip46Signer(
+      this.ndk, 
+      localSigner, 
+      info.signerPubkey!, 
+      info.iframeUrl ? new URL(info.iframeUrl!).origin : undefined
+    );
 
-     // ★ once を使う - 1回だけ実行される ★
-    this.signer.once('connectionLost', async () => {
-      console.log('Connection lost, attempting to reconnect...');
-      this.signer = null;
+    // ★ 修正: connectionLost イベントハンドリングを統一
+    this.signer.removeAllListeners?.('connectionLost');
+    this.signer.once('connectionLost', () => {
+      console.log('Connection lost detected');
       
-      if (this.params.userInfo) {
-        await this.initSigner(this.params.userInfo);
-      }
+      // ★ 再接続処理を呼び出す（非同期で実行、エラーは握りつぶさない）
+      this.handleReconnection(info).catch(err => {
+        console.error('Reconnection handling failed:', err);
+        this.emit('reconnectFailed', err);
+      });
     });
 
-    // we should notify the banner the same way as
-    // the onAuthUrl does
-    this.signer.on(`iframeRestart`, async () => {
-      const iframeUrl = info.iframeUrl + (info.iframeUrl!.includes('?') ? '&' : '?') + 'pubkey=' + info.pubkey + '&rebind=' + localSigner.pubkey;
+    // iframe restart は既存のまま
+    this.signer.removeAllListeners?.('iframeRestart');
+    this.signer.on('iframeRestart', async () => {
+      const iframeUrl = info.iframeUrl + 
+        (info.iframeUrl!.includes('?') ? '&' : '?') + 
+        'pubkey=' + info.pubkey + '&rebind=' + localSigner.pubkey;
       this.emit('iframeRestart', { pubkey: info.pubkey, iframeUrl });
     });
 
-    // OAuth flow
-    // if (!listen) {
+    // authUrl は既存のまま
+    this.signer.removeAllListeners?.('authUrl');
     this.signer.on('authUrl', (url: string) => {
       console.log('nostr login auth url', url);
-
-      // notify our UI
       this.emit('onAuthUrl', { url, iframeUrl: info.iframeUrl, eventToAddAccount });
     });
-    // }
 
+    // 認証フロー
     if (listen) {
-      // nostrconnect: flow
-      // wait for the incoming message from signer
       await this.listen(info);
     } else if (connect) {
-      // bunker: flow
-      // send 'connect' message to signer
       await this.connect(info, this.params.optionsModal.perms);
     } else {
-      // provide saved pubkey as a hint
       await this.signer!.initUserPubkey(info.pubkey);
     }
 
-    // ensure, we're using it in callbacks above
-    // and expect info to be valid after this call
     info.pubkey = this.signer!.userPubkey;
-    // learned after nostrconnect flow
     info.signerPubkey = this.signer!.remotePubkey;
+
+    // ★ 追加: 接続情報を保持
+    this.currentInfo = info;
 
     this.signerAbortController = undefined;
     resolve();
   }
 
-  public async authNip46(
-    type: 'login' | 'signup',
-    {
-      name,
-      bunkerUrl,
-      sk = '',
-      domain = '',
-      iframeUrl = '',
-      customRelays,
-    }: { name: string; bunkerUrl: string; sk?: string; domain?: string; iframeUrl?: string; customRelays?: string[] },
-  ) {
+  // ★ 新規追加: 再接続処理の一元化
+  private async handleReconnection(info: Info): Promise<void> {
+    if (this.isReconnecting) {
+      console.log('Already reconnecting, skipping...');
+      return;
+    }
+
+    if (this.reconnectAttempts >= this.MAX_RECONNECT_ATTEMPTS) {
+      console.error('Max reconnection attempts reached');
+      this.emit('reconnectFailed');
+      this.reconnectAttempts = 0;
+      return;
+    }
+
+    this.isReconnecting = true;
+    this.reconnectAttempts++;
+
     try {
-      const info = bunkerUrlToInfo(bunkerUrl, sk);
-      if (isBunkerUrl(name)) info.bunkerUrl = name;
-      else {
-        info.nip05 = name;
-        info.domain = name.split('@')[1];
+      console.log(`Reconnection attempt ${this.reconnectAttempts}/${this.MAX_RECONNECT_ATTEMPTS}`);
+
+      // 1. リレー再接続
+      const stats = this.ndk.pool.stats();
+      if (stats.connected === 0) {
+        console.log('Reconnecting to relays...');
+        
+        // 既存のリレーを切断
+        for (const relay of this.ndk.pool.relays.values()) {
+          try {
+            relay.disconnect();
+          } catch (e) {
+            console.log('Error disconnecting relay:', e);
+          }
+        }
+
+        // リレー再追加
+        if (info.relays) {
+          for (const r of info.relays) {
+            this.ndk.addExplicitRelay(r, undefined);
+          }
+        }
+
+        // 接続待機
+        await this.ndk.connect();
       }
-      if (domain) info.domain = domain;
-      if (iframeUrl) info.iframeUrl = iframeUrl;
 
-      // カスタムリレーが指定されていれば使用する
-      if (customRelays && customRelays.length > 0) {
-        info.relays = customRelays;
+      // 2. Signer ping確認
+      if (this.signer) {
+        await this.signer.reconnect(info);
       }
 
-      // console.log('nostr login auth info', info);
-      if (!info.signerPubkey || !info.sk || !info.relays?.[0]) {
-        throw new Error(`Bad bunker url ${bunkerUrl}`);
+      // 成功
+      this.reconnectAttempts = 0;
+      this.isReconnecting = false;
+      console.log('Reconnection successful');
+      this.emit('reconnected');
+
+    } catch (error) {
+      console.error(`Reconnection attempt ${this.reconnectAttempts} failed:`, error);
+      this.isReconnecting = false;
+
+      // リトライ
+      if (this.reconnectAttempts < this.MAX_RECONNECT_ATTEMPTS) {
+        const delay = 2000 * this.reconnectAttempts; // 2秒, 4秒, 6秒
+        console.log(`Retrying in ${delay}ms...`);
+        
+        setTimeout(() => {
+          this.handleReconnection(info).catch(err => {
+            console.error('Retry failed:', err);
+          });
+        }, delay);
+      } else {
+        this.emit('reconnectFailed');
+        this.reconnectAttempts = 0;
       }
+    }
+  }
 
-      const eventToAddAccount = Boolean(this.params.userInfo);
-      console.log('authNip46', type, info);
+  // ★ 修正: ensureSigner の簡素化（リトライロジック削除）
+  private async ensureSigner() {
+    // signerがnullの場合のみ再初期化
+    if (!this.signer && this.currentInfo) {
+      console.log('Signer was destroyed, reinitializing...');
+      await this.initSigner(this.currentInfo);
+      return;
+    }
 
-      // updates the info
-      await this.initSigner(info, { connect: true, eventToAddAccount });
+    if (!this.signer) {
+      throw new Error('No signer available');
+    }
 
-      // callback
-      this.onAuth(type, info);
-    } catch (e) {
-      console.log('nostr login auth failed', e);
-      // make ure it's closed
-      // this.popupManager.closePopup();
-      throw e;
+    // リレー接続確認（切断されていれば再接続試行）
+    const stats = this.ndk.pool.stats();
+    if (stats.connected === 0 && this.currentInfo) {
+      console.log('NDK relays disconnected, attempting reconnection...');
+      await this.handleReconnection(this.currentInfo);
     }
   }
 
@@ -723,47 +779,7 @@ class AuthNostrService extends EventEmitter implements Signer {
     return event;
   }
 
-  private async ensureSigner() {
-    // signerがキャンセル等で破棄されている場合は再初期化
-    if (!this.signer && this.params.userInfo) {
-      console.log('Signer was destroyed, reinitializing...');
-      await this.initSigner(this.params.userInfo);
-      return; // initSignerで接続も行われるので終了
-    }
-
-    if (!this.signer) {
-      throw new Error('No signer available');
-    }
-
-    // リレー接続を確認・再接続
-    const stats = this.ndk.pool.stats();
-    console.log('NDK pool stats:', stats);
-
-    if (stats.connected === 0) {
-      console.log('NDK relays disconnected, reinitializing signer...');
-
-      // リレーが完全に切断されている場合、signerも再初期化する必要がある
-      // （RPCサブスクリプションも切断されているため）
-      if (this.params.userInfo) {
-        // 古いsignerを破棄
-        this.signer = null;
-
-        // 既存のリレーを一度切断
-        for (const relay of this.ndk.pool.relays.values()) {
-          try {
-            relay.disconnect();
-          } catch (e) {
-            console.log('Error disconnecting relay:', e);
-          }
-        }
-
-        // signerを再初期化（リレー接続も含む）
-        await this.initSigner(this.params.userInfo);
-      } else {
-        throw new Error('Cannot reconnect: no user info');
-      }
-    }
-  }
+ 
 
   private async codec_call(method: string, pubkey: string, param: string) {
     return new Promise<string>((resolve, reject) => {

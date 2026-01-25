@@ -15,7 +15,7 @@ class NostrRpc extends NDKNostrRpc {
   protected requests: Set<string> = new Set();
   private sub?: NDKSubscription;
   protected _useNip44: boolean = false;
-  protected eventEmitter: EventEmitter = new EventEmitter();
+  public  eventEmitter: EventEmitter = new EventEmitter();
 
   public constructor(ndk: NDK, signer: PrivateKeySigner) {
     super(ndk, signer, ndk.debug.extend('nip46:signer:rpc'));
@@ -386,7 +386,8 @@ export class Nip46Signer extends NDKNip46Signer {
   private _rpc: IframeNostrRpc;
   private lastPingTime: number = 0;
   private pingCacheDuration: number = 30000; // 30秒
-
+  // ★ 追加: 再接続中フラグ
+  private isReconnecting: boolean = false;
 
   constructor(ndk: NDK, localSigner: PrivateKeySigner, signerPubkey: string, iframeOrigin?: string) {
     super(ndk, signerPubkey, localSigner);
@@ -407,36 +408,54 @@ export class Nip46Signer extends NDKNip46Signer {
 
 
 
-  // Nip46.tsのNip46Signerクラス内
-  // 接続確認（必要時のみping リトライ付き 最大10秒）
-  // リトライ回数: 2回（計3回試行）
-  //合計最大時間: 2秒(ping) × 3回 + 2秒(待機) × 2回 = 10秒
-  private async ensureConnection(retries: number = 2): Promise<void> {
+   // ★ 既存メソッドを修正: リトライロジックを削除
+  private async ensureConnection(): Promise<void> {
     if (!this.remotePubkey) return;
 
     const now = Date.now();
 
-    // 最近ping成功していればスキップ
+    // キャッシュチェック
     if (now - this.lastPingTime < this.pingCacheDuration) {
       return;
     }
 
-    for (let i = 0; i <= retries; i++) {
-      try {
-        await this._rpc.pingWithTimeout(this.remotePubkey, 2000); // 2秒タイムアウト
-        this.lastPingTime = now;
-        console.log('Connection check OK');
-        return;
-      } catch (error) {
-        if (i === retries) {
-          console.error('Connection check failed after retries', error);
-          throw new Error('NIP-46 connection lost');
-        }
+    try {
+      await this._rpc.pingWithTimeout(this.remotePubkey, 2000);
+      this.lastPingTime = now;
+      console.log('Connection check OK');
+    } catch (error) {
+      console.error('Connection check failed', error);
+      // ★ 修正: リトライは行わず、接続喪失イベントのみ発火
+      this.emit('connectionLost');
+      throw new Error('NIP-46 connection lost');
+    }
+  }
 
-        const delay = 2000; // 2秒間隔で再送
-        console.log(`Ping failed (${i + 1}/${retries + 1}), retrying in ${delay}ms...`);
-        await new Promise(resolve => setTimeout(resolve, delay));
+
+  // ★ 新規追加: 再接続メソッド（外部から呼ばれる）
+  public async reconnect(info: any): Promise<void> {
+    if (this.isReconnecting) {
+      console.log('Already reconnecting, skipping...');
+      return;
+    }
+
+    this.isReconnecting = true;
+
+    try {
+      console.log('Reconnecting signer...');
+      
+      // リレー再接続は AuthNostrService 側で実施済みと仮定
+      // ここでは ping のみ実施
+      if (this.remotePubkey) {
+        await this._rpc.pingWithTimeout(this.remotePubkey, 2000);
+        this.lastPingTime = Date.now();
+        console.log('Reconnection successful');
       }
+      
+      this.isReconnecting = false;
+    } catch (error) {
+      this.isReconnecting = false;
+      throw error;
     }
   }
 
@@ -541,6 +560,17 @@ export class Nip46Signer extends NDKNip46Signer {
 
     return r.result;
   }
+
+  // ★ 追加: removeAllListeners メソッド
+  public removeAllListeners = (event?: string | symbol): this => {
+    if (event) {
+      this._rpc.eventEmitter.removeAllListeners(event as string);
+    } else {
+      this._rpc.eventEmitter.removeAllListeners();
+    }
+    return this;
+  }
+
 
   // EventEmitter互換メソッド
     // ★ ここに once を追加 ★

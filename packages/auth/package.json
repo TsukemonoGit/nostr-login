@@ -1,6 +1,6 @@
 {
   "name": "@konemono/nostr-login",
-  "version": "1.11.9",
+  "version": "1.11.12",
   "description": "",
   "main": "./dist/index.esm.js",
   "types": "./dist/index.d.ts",
@@ -12,6 +12,7 @@
   "author": "a-fralou",
   "dependencies": {
     "@nostr-dev-kit/ndk": "^2.3.1",
+    "events": "^3.3.0",
     "nostr-tools": "^1.17.0",
     "tseep": "^1.2.1"
   },
