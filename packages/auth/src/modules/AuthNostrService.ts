@@ -104,8 +104,35 @@ class AuthNostrService extends EventEmitter implements Signer {
   }
 
   public cancelNostrConnect() {
-    this.releaseSigner();
+    console.log('cancelNostrConnect called');
+    
+    // RPC subscriptionのみ停止（signerは保持）
+    if (this.signer && this.signer.rpc) {
+      try {
+        (this.signer.rpc as any).stop?.();
+      } catch (e) {
+        console.warn('Failed to stop RPC subscription', e);
+      }
+    }
+    
+    // readyCallbackのみ解放
     this.resetAuth();
+    
+    // signerPromiseのコールバックを呼んで中断
+    if (this.signerErrCallback) {
+      this.signerErrCallback('cancelled');
+      this.signerErrCallback = undefined;
+    }
+    
+    // signerPromiseをリセット
+    this.signerPromise = undefined;
+    
+    // 注意: signerとリレー接続は保持する（次の署名で使える）
+  }
+  
+  // キャンセル用のエイリアス（互換性のため）
+  public cancelSignerInit() {
+    this.cancelNostrConnect();
   }
 
   public async nostrConnect(
@@ -303,13 +330,35 @@ class AuthNostrService extends EventEmitter implements Signer {
   }
 
   private releaseSigner() {
+    console.log('releaseSigner called');
+    
+    // RPC subscriptionを停止
+    if (this.signer && this.signer.rpc) {
+      try {
+        (this.signer.rpc as any).stop?.();
+      } catch (e) {
+        console.warn('Failed to stop RPC subscription', e);
+      }
+    }
+    
+    // signerを削除
     this.signer = null;
-    this.signerErrCallback?.('cancelled');
+    
+    // signerPromiseのコールバックを呼んで中断
+    if (this.signerErrCallback) {
+      this.signerErrCallback('cancelled');
+      this.signerErrCallback = undefined;
+    }
+    
     this.localSigner = null;
 
+    // relayから切断
     for (const r of this.ndk.pool.relays.keys()) {
       this.ndk.pool.removeRelay(r);
     }
+    
+    // signerPromiseをリセット
+    this.signerPromise = undefined;
   }
 
   public async logout(keepSigner = false) {
@@ -494,10 +543,16 @@ class AuthNostrService extends EventEmitter implements Signer {
   }
 
   public async initSigner(info: Info, { listen = false, connect = false, eventToAddAccount = false } = {}) {
+    // 既存のsignerPromiseがあれば待機
     if (this.signerPromise) {
       try {
         await this.signerPromise;
-      } catch {}
+      } catch (e) {
+        // キャンセルされた場合は無視
+        if (e !== 'cancelled') {
+          console.error('Previous signer promise failed:', e);
+        }
+      }
     }
 
     console.log('initSigner info', info);
@@ -508,7 +563,11 @@ class AuthNostrService extends EventEmitter implements Signer {
     this.emit('onIframeUrl', info.iframeUrl);
 
     this.signerPromise = new Promise<void>(async (ok, err) => {
-      this.signerErrCallback = err;
+      this.signerErrCallback = (error) => {
+        console.log('Signer initialization cancelled or failed:', error);
+        err(error);
+      };
+      
       try {
         if (info.relays && !info.iframeUrl) {
           for (const r of info.relays) {
@@ -544,10 +603,13 @@ class AuthNostrService extends EventEmitter implements Signer {
 
         console.log('Signer initialized successfully. User pubkey:', info.pubkey, 'Signer pubkey:', info.signerPubkey);
 
+        // コールバックをクリア（正常終了したので不要）
+        this.signerErrCallback = undefined;
         ok();
       } catch (e) {
         console.error('initSigner failure', e);
         this.signer = null;
+        this.signerErrCallback = undefined;
         err(e);
       }
     });
@@ -586,6 +648,9 @@ class AuthNostrService extends EventEmitter implements Signer {
   }
 
   public async signEvent(event: any) {
+    // リレー接続を確認して切れていたら再接続
+    await this.ensureRelayConnection();
+    
     if (this.localSigner) {
       event.pubkey = getPublicKey(this.localSigner.privateKey!);
       event.id = getEventHash(event);
@@ -597,6 +662,16 @@ class AuthNostrService extends EventEmitter implements Signer {
     }
     console.log('signed', { event });
     return event;
+  }
+  
+  private async ensureRelayConnection() {
+    // リレーに接続されているか確認
+    const connected = Array.from(this.ndk.pool.relays.values()).some(relay => relay.status === 1); // 1 = CONNECTED
+    
+    if (!connected) {
+      console.log('Relay disconnected, reconnecting...');
+      await this.ndk.connect();
+    }
   }
 
   private async codec_call(method: string, pubkey: string, param: string) {
@@ -612,6 +687,8 @@ class AuthNostrService extends EventEmitter implements Signer {
   }
 
   public async encrypt04(pubkey: string, plaintext: string) {
+    await this.ensureRelayConnection();
+    
     if (this.localSigner) {
       return this.localSigner.encrypt(new NDKUser({ pubkey }), plaintext);
     } else {
@@ -620,6 +697,8 @@ class AuthNostrService extends EventEmitter implements Signer {
   }
 
   public async decrypt04(pubkey: string, ciphertext: string) {
+    await this.ensureRelayConnection();
+    
     if (this.localSigner) {
       return this.localSigner.decrypt(new NDKUser({ pubkey }), ciphertext);
     } else {
@@ -628,6 +707,8 @@ class AuthNostrService extends EventEmitter implements Signer {
   }
 
   public async encrypt44(pubkey: string, plaintext: string) {
+    await this.ensureRelayConnection();
+    
     if (this.localSigner) {
       return this.nip44Codec.encrypt(this.localSigner.privateKey!, pubkey, plaintext);
     } else {
@@ -636,6 +717,8 @@ class AuthNostrService extends EventEmitter implements Signer {
   }
 
   public async decrypt44(pubkey: string, ciphertext: string) {
+    await this.ensureRelayConnection();
+    
     if (this.localSigner) {
       return this.nip44Codec.decrypt(this.localSigner.privateKey!, pubkey, ciphertext);
     } else {
