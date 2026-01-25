@@ -261,15 +261,22 @@ class AuthNostrService extends EventEmitter implements Signer {
 
   public async setConnect(info: Info) {
     this.releaseSigner();
-    await this.startAuth();
     
     try {
+      await this.startAuth();
       await this.initSigner(info, { connect: true });
+      
+      // signerが正しく初期化されたか確認
+      if (!info.pubkey || !info.signerPubkey) {
+        throw new Error('Failed to initialize signer: missing pubkey');
+      }
+      
       this.onAuth('login', info);
       await this.endAuth();
     } catch (e) {
       console.error('Failed to set connect:', e);
       this.resetAuth();
+      this.releaseSigner(); // signerもクリーンアップ
       throw e;
     }
   }
@@ -461,13 +468,17 @@ class AuthNostrService extends EventEmitter implements Signer {
       (this.signer!.rpc as IframeNostrRpc).setWorkerIframePort(port);
     }
 
-    this.readyCallback!();
-    this.readyCallback = undefined;
+    if (this.readyCallback) {
+      this.readyCallback();
+      this.readyCallback = undefined;
+    }
   }
 
   public resetAuth() {
-    if (this.readyCallback) this.readyCallback();
-    this.readyCallback = undefined;
+    if (this.readyCallback) {
+      this.readyCallback();
+      this.readyCallback = undefined;
+    }
   }
 
   private async listen(info: Info) {
