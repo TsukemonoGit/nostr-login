@@ -610,6 +610,16 @@ class AuthNostrService extends EventEmitter implements Signer {
     const localSigner = new PrivateKeySigner(info.sk!);
     this.signer = new Nip46Signer(this.ndk, localSigner, info.signerPubkey!, info.iframeUrl ? new URL(info.iframeUrl!).origin : undefined);
 
+     // ★ once を使う - 1回だけ実行される ★
+    this.signer.once('connectionLost', async () => {
+      console.log('Connection lost, attempting to reconnect...');
+      this.signer = null;
+      
+      if (this.params.userInfo) {
+        await this.initSigner(this.params.userInfo);
+      }
+    });
+
     // we should notify the banner the same way as
     // the onAuthUrl does
     this.signer.on(`iframeRestart`, async () => {

@@ -15,7 +15,7 @@ class NostrRpc extends NDKNostrRpc {
   protected requests: Set<string> = new Set();
   private sub?: NDKSubscription;
   protected _useNip44: boolean = false;
-  private eventEmitter: EventEmitter = new EventEmitter();
+  protected eventEmitter: EventEmitter = new EventEmitter();
 
   public constructor(ndk: NDK, signer: PrivateKeySigner) {
     super(ndk, signer, ndk.debug.extend('nip46:signer:rpc'));
@@ -155,6 +155,14 @@ class NostrRpc extends NDKNostrRpc {
 
   protected getId(): string {
     return Math.random().toString(36).substring(7);
+  }
+
+   public override once = <EventKey extends string | symbol = string>(
+    event: EventKey,
+    listener: (...args: any[]) => void
+  ): this => {
+    this.eventEmitter.once(event as string, listener);
+    return this;
   }
 
   public async sendRequest(remotePubkey: string, method: string, params: string[] = [], kind = 24133, cb?: (res: NDKRpcResponse) => void): Promise<NDKRpcResponse> {
@@ -378,7 +386,7 @@ export class Nip46Signer extends NDKNip46Signer {
   private _rpc: IframeNostrRpc;
   private lastPingTime: number = 0;
   private pingCacheDuration: number = 30000; // 30秒
-  private _remotePubkey?: string;
+
 
   constructor(ndk: NDK, localSigner: PrivateKeySigner, signerPubkey: string, iframeOrigin?: string) {
     super(ndk, signerPubkey, localSigner);
@@ -391,28 +399,20 @@ export class Nip46Signer extends NDKNip46Signer {
     });
 
     this.rpc = this._rpc;
-    this._remotePubkey = signerPubkey;
   }
 
   get userPubkey() {
     return this._userPubkey;
   }
 
-  // Use a different name to avoid conflict with base class property
-  get remotePubkeyAccessor() {
-    return this._remotePubkey;
-  }
 
-  set remotePubkeyAccessor(value: string | undefined) {
-    this._remotePubkey = value;
-  }
 
   // Nip46.tsのNip46Signerクラス内
   // 接続確認（必要時のみping リトライ付き 最大10秒）
   // リトライ回数: 2回（計3回試行）
   //合計最大時間: 2秒(ping) × 3回 + 2秒(待機) × 2回 = 10秒
   private async ensureConnection(retries: number = 2): Promise<void> {
-    if (!this._remotePubkey) return;
+    if (!this.remotePubkey) return;
 
     const now = Date.now();
 
@@ -423,7 +423,7 @@ export class Nip46Signer extends NDKNip46Signer {
 
     for (let i = 0; i <= retries; i++) {
       try {
-        await this._rpc.pingWithTimeout(this._remotePubkey, 2000); // 2秒タイムアウト
+        await this._rpc.pingWithTimeout(this.remotePubkey, 2000); // 2秒タイムアウト
         this.lastPingTime = now;
         console.log('Connection check OK');
         return;
@@ -444,7 +444,7 @@ export class Nip46Signer extends NDKNip46Signer {
     console.log('setSignerPubkey', signerPubkey);
 
     // ensure it's set
-    this._remotePubkey = signerPubkey;
+    this.remotePubkey = signerPubkey;
 
     // when we're sure it's known
     this._rpc.on(`iframeRestart-${signerPubkey}`, () => {
@@ -465,10 +465,10 @@ export class Nip46Signer extends NDKNip46Signer {
 
     this._userPubkey = await withTimeout(
       new Promise<string>((ok, err) => {
-        if (!this._remotePubkey) throw new Error('Signer pubkey not set');
+        if (!this.remotePubkey) throw new Error('Signer pubkey not set');
 
-        console.log('get_public_key', this._remotePubkey);
-        this._rpc.sendRequest(this._remotePubkey, 'get_public_key', [], 24133, (response: NDKRpcResponse) => {
+        console.log('get_public_key', this.remotePubkey);
+        this._rpc.sendRequest(this.remotePubkey, 'get_public_key', [], 24133, (response: NDKRpcResponse) => {
           if (response.error) {
             err(new Error(response.error));
           } else {
@@ -490,9 +490,9 @@ export class Nip46Signer extends NDKNip46Signer {
   }
 
   public async connect(token?: string, perms?: string) {
-    if (!this._remotePubkey) throw new Error('No signer pubkey');
-    await this._rpc.connectWithTimeout(this._remotePubkey, token, perms, NIP46_CONNECT_TIMEOUT);
-    await this.setSignerPubkey(this._remotePubkey);
+    if (!this.remotePubkey) throw new Error('No signer pubkey');
+    await this._rpc.connectWithTimeout(this.remotePubkey, token, perms, NIP46_CONNECT_TIMEOUT);
+    await this.setSignerPubkey(this.remotePubkey);
 
     // ログイン完了後に接続確認
     await this.ensureConnection();
@@ -543,6 +543,23 @@ export class Nip46Signer extends NDKNip46Signer {
   }
 
   // EventEmitter互換メソッド
+    // ★ ここに once を追加 ★
+  public override on = <EventKey extends string | symbol = string>(
+    event: EventKey,
+    listener: (...args: any[]) => void
+  ): this => {
+    this._rpc.on(event as string, listener);
+    return this;
+  }
+
+  public override once = <EventKey extends string | symbol = string>(
+    event: EventKey,
+    listener: (...args: any[]) => void
+  ): this => {
+    this._rpc.once(event as string, listener);
+    return this;
+  }
+
   public override emit = <EventKey extends string | symbol = string>(
     event: EventKey,
     ...args: any[]
