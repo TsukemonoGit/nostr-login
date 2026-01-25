@@ -96,13 +96,13 @@ class AuthNostrService extends EventEmitter implements Signer {
     if (this.signerPromise) {
       try {
         await this.signerPromise;
-      } catch {}
+      } catch { }
     }
 
     if (this.readyPromise) {
       try {
         await this.readyPromise;
-      } catch {}
+      } catch { }
     }
   }
 
@@ -511,7 +511,7 @@ class AuthNostrService extends EventEmitter implements Signer {
   }
 
   public isAuthing() {
-    return !!this.readyCallback;
+    return !!this.readyCallback || !!this.signerPromise;
   }
 
   public async startAuth() {
@@ -559,7 +559,7 @@ class AuthNostrService extends EventEmitter implements Signer {
     if (this.signerPromise) {
       try {
         await this.signerPromise;
-      } catch {}
+      } catch { }
     }
 
     // we remove support for iframe from nip05 and bunker-url methods,
@@ -601,7 +601,7 @@ class AuthNostrService extends EventEmitter implements Signer {
   }
 
   private async initSignerInternal(info: Info, listen: boolean, connect: boolean, eventToAddAccount: boolean, resolve: () => void) {
-     // リレー接続
+    // リレー接続
     if (info.relays && !info.iframeUrl) {
       for (const r of info.relays) {
         this.ndk.addExplicitRelay(r, undefined);
@@ -612,9 +612,9 @@ class AuthNostrService extends EventEmitter implements Signer {
 
     const localSigner = new PrivateKeySigner(info.sk!);
     this.signer = new Nip46Signer(
-      this.ndk, 
-      localSigner, 
-      info.signerPubkey!, 
+      this.ndk,
+      localSigner,
+      info.signerPubkey!,
       info.iframeUrl ? new URL(info.iframeUrl!).origin : undefined
     );
 
@@ -622,7 +622,7 @@ class AuthNostrService extends EventEmitter implements Signer {
     this.signer.removeAllListeners?.('connectionLost');
     this.signer.once('connectionLost', () => {
       console.log('Connection lost detected');
-      
+
       // ★ 再接続処理を呼び出す（非同期で実行、エラーは握りつぶさない）
       this.handleReconnection(info).catch(err => {
         console.error('Reconnection handling failed:', err);
@@ -633,8 +633,8 @@ class AuthNostrService extends EventEmitter implements Signer {
     // iframe restart は既存のまま
     this.signer.removeAllListeners?.('iframeRestart');
     this.signer.on('iframeRestart', async () => {
-      const iframeUrl = info.iframeUrl + 
-        (info.iframeUrl!.includes('?') ? '&' : '?') + 
+      const iframeUrl = info.iframeUrl +
+        (info.iframeUrl!.includes('?') ? '&' : '?') +
         'pubkey=' + info.pubkey + '&rebind=' + localSigner.pubkey;
       this.emit('iframeRestart', { pubkey: info.pubkey, iframeUrl });
     });
@@ -667,6 +667,11 @@ class AuthNostrService extends EventEmitter implements Signer {
 
   // ★ 新規追加: 再接続処理の一元化
   private async handleReconnection(info: Info): Promise<void> {
+    if (this.isAuthing()) {
+      console.log('Authentication in progress, skipping reconnection...');
+      return;
+    }
+
     if (this.isReconnecting) {
       console.log('Already reconnecting, skipping...');
       return;
@@ -689,7 +694,7 @@ class AuthNostrService extends EventEmitter implements Signer {
       const stats = this.ndk.pool.stats();
       if (stats.connected === 0) {
         console.log('Reconnecting to relays...');
-        
+
         // 既存のリレーを切断
         for (const relay of this.ndk.pool.relays.values()) {
           try {
@@ -729,7 +734,7 @@ class AuthNostrService extends EventEmitter implements Signer {
       if (this.reconnectAttempts < this.MAX_RECONNECT_ATTEMPTS) {
         const delay = 2000 * this.reconnectAttempts; // 2秒, 4秒, 6秒
         console.log(`Retrying in ${delay}ms...`);
-        
+
         setTimeout(() => {
           this.handleReconnection(info).catch(err => {
             console.error('Retry failed:', err);
@@ -742,7 +747,8 @@ class AuthNostrService extends EventEmitter implements Signer {
     }
   }
 
-  // ★ 修正: ensureSigner の簡素化（リトライロジック削除）
+
+  // ★ 修正: ensureSigner - 再接続処理を同期的に実行
   private async ensureSigner() {
     // signerがnullの場合のみ再初期化
     if (!this.signer && this.currentInfo) {
@@ -755,13 +761,45 @@ class AuthNostrService extends EventEmitter implements Signer {
       throw new Error('No signer available');
     }
 
-    // リレー接続確認（切断されていれば再接続試行）
+    // リレー接続確認（切断されていれば再接続を同期的に実行）
     const stats = this.ndk.pool.stats();
     if (stats.connected === 0 && this.currentInfo) {
       console.log('NDK relays disconnected, attempting reconnection...');
       await this.handleReconnection(this.currentInfo);
+      return;
+    }
+
+    // Signer接続確認（失敗したら再接続を同期的に実行）
+    try {
+      // キャッシュ期間内ならスキップ
+      const now = Date.now();
+      if (this.signer['lastPingTime'] &&
+        now - this.signer['lastPingTime'] < this.signer['pingCacheDuration']) {
+        return;
+      }
+
+      // ログイン処理中はpingをスキップ
+      if (this.isAuthing()) {
+        console.log('Skipping ping during authentication');
+        return;
+      }
+
+      // ping確認
+      if (this.signer.remotePubkey) {
+        await this.signer['_rpc'].pingWithTimeout(this.signer.remotePubkey, 2000);
+        this.signer['lastPingTime'] = now;
+      }
+    } catch (error) {
+      // ping失敗 = 接続切断
+      console.log('Connection lost during ensureSigner, attempting reconnection...');
+      if (this.currentInfo) {
+        await this.handleReconnection(this.currentInfo);
+      } else {
+        throw error;
+      }
     }
   }
+
 
   public async signEvent(event: any) {
     if (this.localSigner) {
@@ -779,7 +817,7 @@ class AuthNostrService extends EventEmitter implements Signer {
     return event;
   }
 
- 
+
 
   private async codec_call(method: string, pubkey: string, param: string) {
     return new Promise<string>((resolve, reject) => {
