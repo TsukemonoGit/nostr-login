@@ -54,7 +54,7 @@ class AuthNostrService extends EventEmitter implements Signer {
   private readonly MAX_RECONNECT_ATTEMPTS = 3;
   private currentInfo?: Info;
   private isReconnecting: boolean = false;
-
+ private reconnectTimer?: NodeJS.Timeout; // ★ 追加
 
   nip04: {
     encrypt: (pubkey: string, plaintext: string) => Promise<string>;
@@ -343,18 +343,6 @@ class AuthNostrService extends EventEmitter implements Signer {
     }
   }
 
-  public async logout(keepSigner = false) {
-    if (!keepSigner) this.releaseSigner();
-
-    // move current to recent
-    localStorageRemoveCurrentAccount();
-
-    // notify everyone
-    this.onAuth('logout');
-
-    this.emit('updateAccounts');
-  }
-
   private setUserInfo(userInfo: Info | null) {
     this.params.userInfo = userInfo;
     this.emit('onUserInfo', userInfo);
@@ -600,6 +588,7 @@ class AuthNostrService extends EventEmitter implements Signer {
     return this.signerPromise;
   }
 
+  // ★ 修正: initSignerInternal
   private async initSignerInternal(info: Info, listen: boolean, connect: boolean, eventToAddAccount: boolean, resolve: () => void) {
     // リレー接続
     if (info.relays && !info.iframeUrl) {
@@ -618,33 +607,8 @@ class AuthNostrService extends EventEmitter implements Signer {
       info.iframeUrl ? new URL(info.iframeUrl!).origin : undefined
     );
 
-    // ★ 修正: connectionLost イベントハンドリングを統一
-    this.signer.removeAllListeners?.('connectionLost');
-    this.signer.once('connectionLost', () => {
-      console.log('Connection lost detected');
-
-      // ★ 再接続処理を呼び出す（非同期で実行、エラーは握りつぶさない）
-      this.handleReconnection(info).catch(err => {
-        console.error('Reconnection handling failed:', err);
-        this.emit('reconnectFailed', err);
-      });
-    });
-
-    // iframe restart は既存のまま
-    this.signer.removeAllListeners?.('iframeRestart');
-    this.signer.on('iframeRestart', async () => {
-      const iframeUrl = info.iframeUrl +
-        (info.iframeUrl!.includes('?') ? '&' : '?') +
-        'pubkey=' + info.pubkey + '&rebind=' + localSigner.pubkey;
-      this.emit('iframeRestart', { pubkey: info.pubkey, iframeUrl });
-    });
-
-    // authUrl は既存のまま
-    this.signer.removeAllListeners?.('authUrl');
-    this.signer.on('authUrl', (url: string) => {
-      console.log('nostr login auth url', url);
-      this.emit('onAuthUrl', { url, iframeUrl: info.iframeUrl, eventToAddAccount });
-    });
+    // ★ イベントハンドラー登録
+    this.setupSignerEventHandlers(info);
 
     // 認証フロー
     if (listen) {
@@ -658,29 +622,88 @@ class AuthNostrService extends EventEmitter implements Signer {
     info.pubkey = this.signer!.userPubkey;
     info.signerPubkey = this.signer!.remotePubkey;
 
-    // ★ 追加: 接続情報を保持
+    // ★ 接続情報を保持
     this.currentInfo = info;
 
     this.signerAbortController = undefined;
     resolve();
   }
 
-  // ★ 新規追加: 再接続処理の一元化
-  private async handleReconnection(info: Info): Promise<void> {
+  // ★ 修正: イベントハンドラーを一度だけ登録
+  private setupSignerEventHandlers(info: Info) {
+    if (!this.signer) return;
+
+    // 既存のリスナーをすべて削除
+    this.signer.removeAllListeners('connectionLost');
+    this.signer.removeAllListeners('iframeRestart');
+    this.signer.removeAllListeners('authUrl');
+
+    // connectionLost: 一度だけ処理
+    this.signer.once('connectionLost', () => {
+      console.log('Connection lost detected');
+      this.scheduleReconnection(info);
+    });
+
+    // iframeRestart
+    this.signer.on('iframeRestart', async () => {
+      const localSigner = this.signer?.['_rpc']?.['_signer'];
+      if (!localSigner) return;
+      
+      const iframeUrl = info.iframeUrl +
+        (info.iframeUrl!.includes('?') ? '&' : '?') +
+        'pubkey=' + info.pubkey + '&rebind=' + localSigner.pubkey;
+      this.emit('iframeRestart', { pubkey: info.pubkey, iframeUrl });
+    });
+
+    // authUrl
+    this.signer.on('authUrl', (url: string) => {
+      console.log('nostr login auth url', url);
+      this.emit('onAuthUrl', { url, iframeUrl: info.iframeUrl, eventToAddAccount: false });
+    });
+  }
+
+  // ★ 新規追加: 再接続スケジューリング
+  private scheduleReconnection(info: Info) {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+    }
+
+    // 認証中はスキップ
     if (this.isAuthing()) {
       console.log('Authentication in progress, skipping reconnection...');
       return;
     }
 
+    // 既に再接続中
     if (this.isReconnecting) {
       console.log('Already reconnecting, skipping...');
       return;
     }
 
+    // 最大試行回数超過
     if (this.reconnectAttempts >= this.MAX_RECONNECT_ATTEMPTS) {
       console.error('Max reconnection attempts reached');
       this.emit('reconnectFailed');
       this.reconnectAttempts = 0;
+      return;
+    }
+
+    const delay = 2000 * (this.reconnectAttempts + 1); // 2秒, 4秒, 6秒
+    console.log(`Scheduling reconnection in ${delay}ms (attempt ${this.reconnectAttempts + 1}/${this.MAX_RECONNECT_ATTEMPTS})`);
+
+    this.reconnectTimer = setTimeout(() => {
+      this.handleReconnection(info).catch(err => {
+        console.error('Reconnection failed:', err);
+        // 失敗したら再スケジュール
+        this.scheduleReconnection(info);
+      });
+    }, delay);
+  }
+  // ★ 新規追加: 再接続処理の一元化
+  // ★ 修正: 再接続処理の簡素化
+  private async handleReconnection(info: Info): Promise<void> {
+    if (this.isReconnecting) {
+      console.log('Already reconnecting, skipping...');
       return;
     }
 
@@ -711,11 +734,10 @@ class AuthNostrService extends EventEmitter implements Signer {
           }
         }
 
-        // 接続待機
         await this.ndk.connect();
       }
 
-      // 2. Signer ping確認
+      // 2. Signer再接続
       if (this.signer) {
         await this.signer.reconnect(info);
       }
@@ -726,29 +748,18 @@ class AuthNostrService extends EventEmitter implements Signer {
       console.log('Reconnection successful');
       this.emit('reconnected');
 
+      // ★ イベントハンドラーを再登録
+      this.setupSignerEventHandlers(info);
+
     } catch (error) {
       console.error(`Reconnection attempt ${this.reconnectAttempts} failed:`, error);
       this.isReconnecting = false;
-
-      // リトライ
-      if (this.reconnectAttempts < this.MAX_RECONNECT_ATTEMPTS) {
-        const delay = 2000 * this.reconnectAttempts; // 2秒, 4秒, 6秒
-        console.log(`Retrying in ${delay}ms...`);
-
-        setTimeout(() => {
-          this.handleReconnection(info).catch(err => {
-            console.error('Retry failed:', err);
-          });
-        }, delay);
-      } else {
-        this.emit('reconnectFailed');
-        this.reconnectAttempts = 0;
-      }
+      throw error; // ★ エラーを上位に伝播
     }
   }
 
 
-  // ★ 修正: ensureSigner - 再接続処理を同期的に実行
+   // ★ 修正: ensureSigner - 再接続は非同期で実施
   private async ensureSigner() {
     // signerがnullの場合のみ再初期化
     if (!this.signer && this.currentInfo) {
@@ -761,20 +772,22 @@ class AuthNostrService extends EventEmitter implements Signer {
       throw new Error('No signer available');
     }
 
-    // リレー接続確認（切断されていれば再接続を同期的に実行）
+    // リレー接続確認
     const stats = this.ndk.pool.stats();
     if (stats.connected === 0 && this.currentInfo) {
-      console.log('NDK relays disconnected, attempting reconnection...');
-      await this.handleReconnection(this.currentInfo);
-      return;
+      console.log('NDK relays disconnected');
+      // ★ 修正: 非同期で再接続スケジュール
+      this.scheduleReconnection(this.currentInfo);
+      throw new Error('NDK relays disconnected');
     }
 
-    // Signer接続確認（失敗したら再接続を同期的に実行）
+    // Signer接続確認
     try {
-      // キャッシュ期間内ならスキップ
       const now = Date.now();
-      if (this.signer['lastPingTime'] &&
-        now - this.signer['lastPingTime'] < this.signer['pingCacheDuration']) {
+      const signer = this.signer as any;
+      
+      // キャッシュ期間内ならスキップ
+      if (signer.lastPingTime && now - signer.lastPingTime < signer.pingCacheDuration) {
         return;
       }
 
@@ -786,20 +799,15 @@ class AuthNostrService extends EventEmitter implements Signer {
 
       // ping確認
       if (this.signer.remotePubkey) {
-        await this.signer['_rpc'].pingWithTimeout(this.signer.remotePubkey, 2000);
-        this.signer['lastPingTime'] = now;
+        await signer._rpc.pingWithTimeout(this.signer.remotePubkey, 2000);
+        signer.lastPingTime = now;
       }
     } catch (error) {
-      // ping失敗 = 接続切断
-      console.log('Connection lost during ensureSigner, attempting reconnection...');
-      if (this.currentInfo) {
-        await this.handleReconnection(this.currentInfo);
-      } else {
-        throw error;
-      }
+      console.log('Ping failed in ensureSigner');
+      // ★ 修正: connectionLostイベントに任せる
+      throw error;
     }
   }
-
 
   public async signEvent(event: any) {
     if (this.localSigner) {
@@ -817,6 +825,25 @@ class AuthNostrService extends EventEmitter implements Signer {
     return event;
   }
 
+  // ★ 追加: クリーンアップ
+  public cleanup() {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = undefined;
+    }
+    this.reconnectAttempts = 0;
+    this.isReconnecting = false;
+  }
+
+  public async logout(keepSigner = false) {
+    this.cleanup(); // ★ 追加
+    
+    if (!keepSigner) this.releaseSigner();
+
+    localStorageRemoveCurrentAccount();
+    this.onAuth('logout');
+    this.emit('updateAccounts');
+  }
 
 
   private async codec_call(method: string, pubkey: string, param: string) {

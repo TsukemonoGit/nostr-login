@@ -380,19 +380,17 @@ export class ReadyListener {
     return r;
   }
 }
-
 export class Nip46Signer extends NDKNip46Signer {
   private _userPubkey: string = '';
   private _rpc: IframeNostrRpc;
   private lastPingTime: number = 0;
-  private pingCacheDuration: number = 30000; // 30秒
-  // ★ 追加: 再接続中フラグ
+  private pingCacheDuration: number = 30000;
   private isReconnecting: boolean = false;
+  private connectionLostEmitted: boolean = false; // ★ 追加
 
   constructor(ndk: NDK, localSigner: PrivateKeySigner, signerPubkey: string, iframeOrigin?: string) {
     super(ndk, signerPubkey, localSigner);
 
-    // override with our own rpc implementation
     this._rpc = new IframeNostrRpc(ndk, localSigner, iframeOrigin);
     this._rpc.setUseNip44(true);
     this._rpc.on('authUrl', (url: string) => {
@@ -406,9 +404,7 @@ export class Nip46Signer extends NDKNip46Signer {
     return this._userPubkey;
   }
 
-
-
-   // ★ 既存メソッドを修正: リトライロジックを削除
+  // ★ 修正: 接続確認のみ実施、再接続は行わない
   private async ensureConnection(): Promise<void> {
     if (!this.remotePubkey) return;
 
@@ -422,17 +418,22 @@ export class Nip46Signer extends NDKNip46Signer {
     try {
       await this._rpc.pingWithTimeout(this.remotePubkey, 2000);
       this.lastPingTime = now;
+      this.connectionLostEmitted = false; // ★ リセット
       console.log('Connection check OK');
     } catch (error) {
       console.error('Connection check failed', error);
-      // ★ 修正: リトライは行わず、接続喪失イベントのみ発火
-      this.emit('connectionLost');
+      
+      // ★ 修正: 一度だけイベント発火
+      if (!this.connectionLostEmitted) {
+        this.connectionLostEmitted = true;
+        this.emit('connectionLost');
+      }
+      
       throw new Error('NIP-46 connection lost');
     }
   }
 
-
-  // ★ 新規追加: 再接続メソッド（外部から呼ばれる）
+  // ★ 修正: 再接続メソッド - イベント発火を抑制
   public async reconnect(info: any): Promise<void> {
     if (this.isReconnecting) {
       console.log('Already reconnecting, skipping...');
@@ -444,12 +445,20 @@ export class Nip46Signer extends NDKNip46Signer {
     try {
       console.log('Reconnecting signer...');
       
-      // リレー再接続は AuthNostrService 側で実施済みと仮定
-      // ここでは ping のみ実施
       if (this.remotePubkey) {
-        await this._rpc.pingWithTimeout(this.remotePubkey, 2000);
-        this.lastPingTime = Date.now();
-        console.log('Reconnection successful');
+        // ★ 修正: 再接続中はイベント発火を抑制
+        const prevFlag = this.connectionLostEmitted;
+        this.connectionLostEmitted = true;
+        
+        try {
+          await this._rpc.pingWithTimeout(this.remotePubkey, 2000);
+          this.lastPingTime = Date.now();
+          this.connectionLostEmitted = false; // ★ 成功時のみリセット
+          console.log('Reconnection successful');
+        } catch (error) {
+          this.connectionLostEmitted = prevFlag; // ★ 失敗時は元に戻す
+          throw error;
+        }
       }
       
       this.isReconnecting = false;
@@ -462,15 +471,12 @@ export class Nip46Signer extends NDKNip46Signer {
   private async setSignerPubkey(signerPubkey: string, sameAsUser: boolean = false) {
     console.log('setSignerPubkey', signerPubkey);
 
-    // ensure it's set
     this.remotePubkey = signerPubkey;
 
-    // when we're sure it's known
     this._rpc.on(`iframeRestart-${signerPubkey}`, () => {
       this.emit('iframeRestart');
     });
 
-    // now call getPublicKey and swap remotePubkey w/ that
     await this.initUserPubkey(sameAsUser ? signerPubkey : '');
   }
 
@@ -503,29 +509,26 @@ export class Nip46Signer extends NDKNip46Signer {
   public async listen(nostrConnectSecret: string) {
     const signerPubkey = await (this.rpc as IframeNostrRpc).listen(nostrConnectSecret);
     await this.setSignerPubkey(signerPubkey);
-
-    // ログイン完了後に接続確認
-    await this.ensureConnection();
+    // ★ 削除: ログイン直後の接続確認は不要
+    // await this.ensureConnection();
   }
 
   public async connect(token?: string, perms?: string) {
     if (!this.remotePubkey) throw new Error('No signer pubkey');
     await this._rpc.connectWithTimeout(this.remotePubkey, token, perms, NIP46_CONNECT_TIMEOUT);
     await this.setSignerPubkey(this.remotePubkey);
-
-    // ログイン完了後に接続確認
-    await this.ensureConnection();
+    // ★ 削除: ログイン直後の接続確認は不要
+    // await this.ensureConnection();
   }
 
   public async setListenReply(reply: any, nostrConnectSecret: string) {
     const signerPubkey = await this._rpc.parseNostrConnectReply(reply, nostrConnectSecret);
     await this.setSignerPubkey(signerPubkey, true);
-
-    // ログイン完了後に接続確認
-    await this.ensureConnection();
+    // ★ 削除: ログイン直後の接続確認は不要
+    // await this.ensureConnection();
   }
 
-  // 署名メソッドのオーバーライド - 署名前に接続確認
+  // ★ 修正: 署名前に接続確認
   async sign(event: NostrEvent): Promise<string> {
     await this.ensureConnection();
     return super.sign(event);
@@ -542,12 +545,7 @@ export class Nip46Signer extends NDKNip46Signer {
   }
 
   public async createAccount2({ bunkerPubkey, name, domain, perms = '' }: { bunkerPubkey: string; name: string; domain: string; perms?: string }) {
-    const params = [
-      name,
-      domain,
-      '', // email
-      perms,
-    ];
+    const params = [name, domain, '', perms];
 
     const r = await new Promise<NDKRpcResponse>(ok => {
       this.rpc.sendRequest(bunkerPubkey, 'create_account', params, undefined, ok);
@@ -561,7 +559,6 @@ export class Nip46Signer extends NDKNip46Signer {
     return r.result;
   }
 
-  // ★ 追加: removeAllListeners メソッド
   public removeAllListeners = (event?: string | symbol): this => {
     if (event) {
       this._rpc.eventEmitter.removeAllListeners(event as string);
@@ -571,9 +568,6 @@ export class Nip46Signer extends NDKNip46Signer {
     return this;
   }
 
-
-  // EventEmitter互換メソッド
-    // ★ ここに once を追加 ★
   public override on = <EventKey extends string | symbol = string>(
     event: EventKey,
     listener: (...args: any[]) => void
