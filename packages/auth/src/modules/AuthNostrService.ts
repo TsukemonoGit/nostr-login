@@ -103,15 +103,7 @@ class AuthNostrService extends EventEmitter implements Signer {
 
   public cancelNostrConnect() {
     console.log('cancelNostrConnect called');
-
-    // RPC subscriptionのみ停止（signerは保持）
-    if (this.signer && this.signer.rpc) {
-      try {
-        (this.signer.rpc as any).stop?.();
-      } catch (e) {
-        console.warn('Failed to stop RPC subscription', e);
-      }
-    }
+    this.releaseSigner();
 
     // readyCallbackのみ解放
     this.resetAuth();
@@ -121,11 +113,6 @@ class AuthNostrService extends EventEmitter implements Signer {
       this.signerErrCallback('cancelled');
       this.signerErrCallback = undefined;
     }
-
-    // signerPromiseをリセット
-    this.signerPromise = undefined;
-
-    // 注意: signerとリレー接続は保持する（次の署名で使える）
   }
 
   // キャンセル用のエイリアス（互換性のため）
@@ -336,7 +323,6 @@ class AuthNostrService extends EventEmitter implements Signer {
 
   private releaseSigner() {
     console.log('releaseSigner called');
-
     // RPC subscriptionを停止
     if (this.signer && this.signer.rpc) {
       try {
