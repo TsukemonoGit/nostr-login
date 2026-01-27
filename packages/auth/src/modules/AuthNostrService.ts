@@ -91,13 +91,13 @@ class AuthNostrService extends EventEmitter implements Signer {
     if (this.signerPromise) {
       try {
         await this.signerPromise;
-      } catch {}
+      } catch { }
     }
 
     if (this.readyPromise) {
       try {
         await this.readyPromise;
-      } catch {}
+      } catch { }
     }
   }
 
@@ -136,7 +136,8 @@ class AuthNostrService extends EventEmitter implements Signer {
       customRelays?: string[];
     } = {},
   ) {
-    // カスタムリレーが指定されていれば使用、そうでなければ単一リレーまたはデフォルト
+    console.log('[nostrConnect] Called', { relay, domain, link, iframeUrl, importConnect, customRelays });
+
     const relays = customRelays && customRelays.length > 0 ? customRelays : relay ? [relay] : DEFAULT_NIP46_RELAYS;
 
     const info: Info = {
@@ -149,29 +150,49 @@ class AuthNostrService extends EventEmitter implements Signer {
       iframeUrl,
     };
 
-    console.log('nostrconnect info', info, link);
+    console.log('[nostrConnect] Created info', info, link);
 
-    if (link && !iframeUrl) window.open(link, '_blank', 'width=400,height=700');
+    if (link && !iframeUrl) {
+      console.log('[nostrConnect] Opening Amber');
+      window.open(link, '_blank', 'width=400,height=700');
+    }
 
     try {
+      console.log('[nostrConnect] Calling initSigner with listen=true');
       await this.initSigner(info, { listen: true });
+
+      // initSigner が完了するまで待機（signerPromise の完了を待つ）
+      if (this.signerPromise) {
+        console.log('[nostrConnect] Waiting for signerPromise to complete');
+        await this.signerPromise;
+        console.log('[nostrConnect] signerPromise completed');
+      }
+
     } catch (e) {
-      console.error('Failed to initialize signer:', e);
+      console.error('[nostrConnect] Failed to initialize signer:', e);
       throw new Error(`Connection failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
     }
 
+    console.log('[nostrConnect] Checking pubkeys', { pubkey: info.pubkey, signerPubkey: info.signerPubkey });
+
     if (!info.pubkey || !info.signerPubkey) {
+      console.error('[nostrConnect] Missing pubkeys after initialization');
       throw new Error('Failed to get pubkey from signer');
     }
 
     const relayParams = relays.map(r => `relay=${encodeURIComponent(r)}`).join('&');
     info.bunkerUrl = `bunker://${info.signerPubkey}?${relayParams}`;
+    console.log('[nostrConnect] Generated bunkerUrl', info.bunkerUrl);
 
-    if (!importConnect) this.onAuth('login', info);
+    if (!importConnect) {
+      console.log('[nostrConnect] Calling onAuth');
+      this.onAuth('login', info);
+    }
 
+    console.log('[nostrConnect] Completed successfully');
     return info;
   }
-
+  
   public async createNostrConnect() {
     this.nostrConnectKey = generatePrivateKey();
     this.nostrConnectSecret = Math.random().toString(36).substring(7);
