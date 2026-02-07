@@ -10,6 +10,7 @@
 | **安定性改善** | 無限ローディング問題を解消（タイムアウト設定・キャンセル機能追加）|
 
 **npm:** `npm install @konemono/nostr-login`
+
 ---
 
 Nostr-Login
