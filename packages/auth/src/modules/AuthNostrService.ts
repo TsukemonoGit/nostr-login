@@ -1,7 +1,7 @@
 // packages/auth/src/modules/AuthNostrService.ts
 
 import { localStorageAddAccount, bunkerUrlToInfo, isBunkerUrl, fetchProfile, getBunkerUrl, localStorageRemoveCurrentAccount, createProfile, getIcon } from '../utils';
-import { ConnectionString, Info } from 'nostr-login-components/dist/types/types';
+import { ConnectionString, Info } from '@konemono/nostr-login-components/dist/types/types';
 import { generatePrivateKey, getEventHash, getPublicKey, nip19 } from 'nostr-tools';
 import { NostrLoginAuthOptions, Response } from '../types';
 import NDK, { NDKEvent, NDKNip46Signer, NDKRpcResponse, NDKUser, NostrEvent } from '@nostr-dev-kit/ndk';
@@ -91,13 +91,13 @@ class AuthNostrService extends EventEmitter implements Signer {
     if (this.signerPromise) {
       try {
         await this.signerPromise;
-      } catch { }
+      } catch {}
     }
 
     if (this.readyPromise) {
       try {
         await this.readyPromise;
-      } catch { }
+      } catch {}
     }
   }
 
@@ -167,7 +167,6 @@ class AuthNostrService extends EventEmitter implements Signer {
         await this.signerPromise;
         console.log('[nostrConnect] signerPromise completed');
       }
-
     } catch (e) {
       console.error('[nostrConnect] Failed to initialize signer:', e);
       throw new Error(`Connection failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
@@ -192,7 +191,7 @@ class AuthNostrService extends EventEmitter implements Signer {
     console.log('[nostrConnect] Completed successfully');
     return info;
   }
-  
+
   public async createNostrConnect() {
     this.nostrConnectKey = generatePrivateKey();
     this.nostrConnectSecret = Math.random().toString(36).substring(7);

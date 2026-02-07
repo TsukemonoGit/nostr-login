@@ -1,6 +1,6 @@
 import { NostrLoginOptions, TypeBanner } from '../types';
 import { NostrParams } from '.';
-import { Info } from 'nostr-login-components/dist/types/types';
+import { Info } from '@konemono/nostr-login-components/dist/types/types';
 import { EventEmitter } from 'tseep';
 import { getDarkMode } from '../utils';
 import { ReadyListener } from './Nip46';

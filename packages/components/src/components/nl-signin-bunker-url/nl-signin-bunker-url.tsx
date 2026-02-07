@@ -1,5 +1,6 @@
 import { Component, h, State, Prop, Fragment, Event, EventEmitter } from '@stencil/core';
 import { state } from '@/store';
+import QrScanner from 'qr-scanner';
 
 @Component({
   tag: 'nl-signin-bunker-url',
@@ -10,10 +11,15 @@ export class NlSigninBunkerUrl {
   @Prop() titleLogin = 'Connect with bunker url';
   @Prop() description = 'Please enter a bunker url provided by key store.';
   @State() isGood = false;
+  @State() isScanning = false;
+  @State() scanError = '';
 
   @Event() nlLogin: EventEmitter<string>;
   @Event() nlCheckLogin: EventEmitter<string>;
   @Event() nlRelaysChanged: EventEmitter<string[]>;
+
+  private scanner: QrScanner | null = null;
+  private videoElement: HTMLVideoElement;
 
   handleInputChange(event: Event) {
     state.nlSigninBunkerUrl.loginName = (event.target as HTMLInputElement).value;
@@ -25,6 +31,56 @@ export class NlSigninBunkerUrl {
     e.preventDefault();
 
     this.nlLogin.emit(state.nlSigninBunkerUrl.loginName);
+  }
+
+  async startScan() {
+    this.scanError = '';
+    this.isScanning = true;
+
+    // Wait for the video element to be rendered
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+    if (!this.videoElement) {
+      this.scanError = 'Camera not available';
+      this.isScanning = false;
+      return;
+    }
+
+    try {
+      this.scanner = new QrScanner(
+        this.videoElement,
+        result => {
+          const data = result.data;
+          if (data.startsWith('bunker://') || data.startsWith('nostrconnect://')) {
+            state.nlSigninBunkerUrl.loginName = data;
+            this.nlCheckLogin.emit(data);
+            this.stopScan();
+          }
+        },
+        {
+          highlightScanRegion: true,
+          highlightCodeOutline: true,
+        },
+      );
+      await this.scanner.start();
+    } catch (e) {
+      console.error('QR Scanner error:', e);
+      this.scanError = 'Failed to access camera';
+      this.isScanning = false;
+    }
+  }
+
+  stopScan() {
+    if (this.scanner) {
+      this.scanner.stop();
+      this.scanner.destroy();
+      this.scanner = null;
+    }
+    this.isScanning = false;
+  }
+
+  disconnectedCallback() {
+    this.stopScan();
   }
 
   render() {
@@ -61,6 +117,42 @@ export class NlSigninBunkerUrl {
               </svg>
             </div>
           </div>
+
+          {/* QR Scanner */}
+          {this.isScanning ? (
+            <div class="mb-3">
+              <div class="relative rounded-lg overflow-hidden bg-black" style={{ aspectRatio: '1' }}>
+                <video ref={el => (this.videoElement = el as HTMLVideoElement)} style={{ width: '100%', height: '100%', objectFit: 'cover' }}></video>
+              </div>
+              <button type="button" onClick={() => this.stopScan()} class="nl-action-button mt-2 w-full py-2 px-4 text-sm font-medium rounded-lg border border-transparent">
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <div class="mb-3">
+              <button
+                type="button"
+                onClick={() => this.startScan()}
+                class="nl-action-button w-full py-2 px-4 inline-flex justify-center items-center gap-x-2 text-sm font-medium rounded-lg border border-transparent"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M6.827 6.175A2.31 2.31 0 0 1 5.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 0 0-1.134-.175 2.31 2.31 0 0 1-1.64-1.055l-.822-1.316a2.192 2.192 0 0 0-1.736-1.039 48.774 48.774 0 0 0-5.232 0 2.192 2.192 0 0 0-1.736 1.039l-.821 1.316Z"
+                  />
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 12.75a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0ZM18.75 10.5h.008v.008h-.008V10.5Z" />
+                </svg>
+                Scan QR Code
+              </button>
+            </div>
+          )}
+
+          {this.scanError && (
+            <div class="mb-2">
+              <p class="nl-error font-light text-center text-sm">{this.scanError}</p>
+            </div>
+          )}
 
           <div class="ps-4 pe-4 overflow-y-auto">
             <p class="nl-error font-light text-center text-sm max-w-96 mx-auto">{state.error}</p>

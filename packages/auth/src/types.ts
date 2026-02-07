@@ -1,4 +1,4 @@
-import { Info, AuthMethod, ConnectionString, RecentType, BannerNotify } from 'nostr-login-components/dist/types/types';
+import { Info, AuthMethod, ConnectionString, RecentType, BannerNotify } from '@konemono/nostr-login-components/dist/types/types';
 
 export interface NostrLoginAuthOptions {
   localNsec?: string;

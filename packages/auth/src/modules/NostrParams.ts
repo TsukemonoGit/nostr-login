@@ -1,4 +1,4 @@
-import { Info } from 'nostr-login-components/dist/types/types';
+import { Info } from '@konemono/nostr-login-components/dist/types/types';
 import { NostrLoginOptions } from '../types';
 
 class NostrParams {

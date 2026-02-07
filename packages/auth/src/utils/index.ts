@@ -1,4 +1,4 @@
-import { Info, RecentType } from 'nostr-login-components/dist/types/types';
+import { Info, RecentType } from '@konemono/nostr-login-components/dist/types/types';
 import NDK, { NDKEvent, NDKRelaySet, NDKSigner, NDKUser } from '@nostr-dev-kit/ndk';
 import { generatePrivateKey } from 'nostr-tools';
 import { NostrLoginOptions } from '../types';
@@ -68,7 +68,7 @@ export const createProfile = async (info: Info, profileNdk: NDK, signer: NDKSign
     tags: [],
   });
 
-  const relays = prepareSignupRelays(signupRelays)
+  const relays = prepareSignupRelays(signupRelays);
   for (const r of relays) {
     relaysEvent.tags.push(['r', r]);
   }

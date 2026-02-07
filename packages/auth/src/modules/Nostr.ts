@@ -1,4 +1,4 @@
-import { Info } from 'nostr-login-components/dist/types/types';
+import { Info } from '@konemono/nostr-login-components/dist/types/types';
 
 export interface Signer {
   signEvent: (event: any) => Promise<any>;

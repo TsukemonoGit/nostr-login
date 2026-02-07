@@ -2,7 +2,7 @@ import { NostrLoginOptions, StartScreens, TypeModal } from '../types';
 import { checkNip05, getBunkerUrl, getDarkMode, localStorageRemoveRecent, localStorageSetItem, prepareSignupRelays } from '../utils';
 import { AuthNostrService, NostrExtensionService, NostrParams } from '.';
 import { EventEmitter } from 'tseep';
-import { ConnectionString, Info, RecentType } from 'nostr-login-components/dist/types/types';
+import { ConnectionString, Info, RecentType } from '@konemono/nostr-login-components/dist/types/types';
 import { nip19 } from 'nostr-tools';
 import { setDarkMode } from '..';
 
