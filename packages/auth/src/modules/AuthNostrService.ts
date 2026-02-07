@@ -1,3 +1,5 @@
+// packages/auth/src/modules/AuthNostrService.ts
+
 import { localStorageAddAccount, bunkerUrlToInfo, isBunkerUrl, fetchProfile, getBunkerUrl, localStorageRemoveCurrentAccount, createProfile, getIcon } from '../utils';
 import { ConnectionString, Info } from 'nostr-login-components/dist/types/types';
 import { generatePrivateKey, getEventHash, getPublicKey, nip19 } from 'nostr-tools';
@@ -12,6 +14,7 @@ import { PrivateKeySigner } from './Signer';
 import { DEFAULT_NIP46_RELAYS } from '../const';
 
 const OUTBOX_RELAYS = ['wss://user.kindpag.es', 'wss://purplepag.es', 'wss://relay.nos.social'];
+
 const NOSTRCONNECT_APPS: ConnectionString[] = [
   {
     name: 'Nsec.app',
@@ -40,7 +43,6 @@ class AuthNostrService extends EventEmitter implements Signer {
   private params: NostrParams;
   private signerPromise?: Promise<void>;
   private signerErrCallback?: (err: string) => void;
-  private signerAbortController?: AbortController;
   private readyPromise?: Promise<void>;
   private readyCallback?: () => void;
   private nip44Codec = new Nip44();
@@ -89,33 +91,33 @@ class AuthNostrService extends EventEmitter implements Signer {
     if (this.signerPromise) {
       try {
         await this.signerPromise;
-      } catch {}
+      } catch { }
     }
 
     if (this.readyPromise) {
       try {
         await this.readyPromise;
-      } catch {}
+      } catch { }
     }
   }
 
   public cancelNostrConnect() {
+    console.log('cancelNostrConnect called');
     this.releaseSigner();
-    this.resetAuth();
-  }
 
-  public cancelSignerInit() {
-    if (this.signerAbortController) {
-      this.signerAbortController.abort();
-      this.signerAbortController = undefined;
-    }
+    // readyCallbackのみ解放
+    this.resetAuth();
+
+    // signerPromiseのコールバックを呼んで中断
     if (this.signerErrCallback) {
-      this.signerErrCallback('Cancelled by user');
+      this.signerErrCallback('cancelled');
       this.signerErrCallback = undefined;
     }
-    // readyCallbackもクリアする
-    this.resetAuth();
-    this.emit('signerCancelled');
+  }
+
+  // キャンセル用のエイリアス（互換性のため）
+  public cancelSignerInit() {
+    this.cancelNostrConnect();
   }
 
   public async nostrConnect(
@@ -134,40 +136,63 @@ class AuthNostrService extends EventEmitter implements Signer {
       customRelays?: string[];
     } = {},
   ) {
-    // カスタムリレーが指定されていれば使用、そうでなければ単一リレーまたはデフォルト
+    console.log('[nostrConnect] Called', { relay, domain, link, iframeUrl, importConnect, customRelays });
+
     const relays = customRelays && customRelays.length > 0 ? customRelays : relay ? [relay] : DEFAULT_NIP46_RELAYS;
 
     const info: Info = {
       authMethod: 'connect',
-      pubkey: '', // unknown yet!
-      signerPubkey: '', // unknown too!
+      pubkey: '',
+      signerPubkey: '',
       sk: this.nostrConnectKey,
       domain: domain,
       relays: relays,
       iframeUrl,
     };
 
-    console.log('nostrconnect info', info, link);
+    console.log('[nostrConnect] Created info', info, link);
 
-    // non-iframe flow
-    if (link && !iframeUrl) window.open(link, '_blank', 'width=400,height=700');
+    if (link && !iframeUrl) {
+      console.log('[nostrConnect] Opening Amber');
+      window.open(link, '_blank', 'width=400,height=700');
+    }
 
-    // init nip46 signer
-    await this.initSigner(info, { listen: true });
+    try {
+      console.log('[nostrConnect] Calling initSigner with listen=true');
+      await this.initSigner(info, { listen: true });
 
-    // signer learns the remote pubkey
-    if (!info.pubkey || !info.signerPubkey) throw new Error('Bad remote pubkey');
+      // initSigner が完了するまで待機（signerPromise の完了を待つ）
+      if (this.signerPromise) {
+        console.log('[nostrConnect] Waiting for signerPromise to complete');
+        await this.signerPromise;
+        console.log('[nostrConnect] signerPromise completed');
+      }
 
-    // bunkerUrl\u306b\u5168\u30ea\u30ec\u30fc\u3092\u542b\u3081\u308b
+    } catch (e) {
+      console.error('[nostrConnect] Failed to initialize signer:', e);
+      throw new Error(`Connection failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
+    }
+
+    console.log('[nostrConnect] Checking pubkeys', { pubkey: info.pubkey, signerPubkey: info.signerPubkey });
+
+    if (!info.pubkey || !info.signerPubkey) {
+      console.error('[nostrConnect] Missing pubkeys after initialization');
+      throw new Error('Failed to get pubkey from signer');
+    }
+
     const relayParams = relays.map(r => `relay=${encodeURIComponent(r)}`).join('&');
     info.bunkerUrl = `bunker://${info.signerPubkey}?${relayParams}`;
+    console.log('[nostrConnect] Generated bunkerUrl', info.bunkerUrl);
 
-    // callback
-    if (!importConnect) this.onAuth('login', info);
+    if (!importConnect) {
+      console.log('[nostrConnect] Calling onAuth');
+      this.onAuth('login', info);
+    }
 
+    console.log('[nostrConnect] Completed successfully');
     return info;
   }
-
+  
   public async createNostrConnect() {
     this.nostrConnectKey = generatePrivateKey();
     this.nostrConnectSecret = Math.random().toString(36).substring(7);
@@ -186,18 +211,7 @@ class AuthNostrService extends EventEmitter implements Signer {
   public async getNostrConnectServices(customRelays?: string[]): Promise<[string, ConnectionString[]]> {
     const nostrconnect = await this.createNostrConnect();
 
-    // copy defaults
     const apps = NOSTRCONNECT_APPS.map(a => ({ ...a }));
-    // if (this.params.optionsModal.dev) {
-    //   apps.push({
-    //     name: 'Dev.Nsec.app',
-    //     domain: 'new.nsec.app',
-    //     canImport: true,
-    //     img: 'https://new.nsec.app/assets/favicon.ico',
-    //     link: 'https://dev.nsec.app/<nostrconnect>',
-    //     relay: 'wss://relay.nsec.app/',
-    //   });
-    // }
 
     for (const a of apps) {
       let relays = customRelays && customRelays.length > 0 ? customRelays : DEFAULT_NIP46_RELAYS;
@@ -218,10 +232,8 @@ class AuthNostrService extends EventEmitter implements Signer {
       const relayParams = relays.map(r => `&relay=${encodeURIComponent(r)}`).join('');
       const nc = nostrconnect + relayParams;
       if (a.iframeUrl) {
-        // pass plain nc url for iframe-based flow
         a.link = nc;
       } else {
-        // we will open popup ourselves
         a.link = a.link.replace('<nostrconnect>', nc);
       }
     }
@@ -253,10 +265,8 @@ class AuthNostrService extends EventEmitter implements Signer {
   }
 
   public prepareImportUrl(url: string) {
-    // for OTP we choose interactive import
     if (this.params.userInfo?.authMethod === 'otp') return url + '&import=true';
 
-    // for local we export our existing key
     if (!this.localSigner || this.params.userInfo?.authMethod !== 'local') throw new Error('Most be local keys');
     return url + '#import=' + nip19.nsecEncode(this.localSigner.privateKey!);
   }
@@ -267,14 +277,10 @@ class AuthNostrService extends EventEmitter implements Signer {
 
     const info = await this.nostrConnect(relay, { domain, link, importConnect: true, iframeUrl });
 
-    // logout to remove local keys from storage
-    // but keep the connect signer
     await this.logout(/*keepSigner*/ true);
 
-    // release local one
     this.localSigner = null;
 
-    // notify app that we've switched to 'connect' keys
     this.onAuth('login', info);
   }
 
@@ -295,54 +301,83 @@ class AuthNostrService extends EventEmitter implements Signer {
 
   public async setConnect(info: Info) {
     this.releaseSigner();
-    await this.startAuth();
-    await this.initSigner(info);
-    this.onAuth('login', info);
-    await this.endAuth();
+
+    try {
+      await this.startAuth();
+      await this.initSigner(info, { connect: true });
+
+      // signerが正しく初期化されたか確認
+      if (!info.pubkey || !info.signerPubkey) {
+        throw new Error('Failed to initialize signer: missing pubkey');
+      }
+
+      this.onAuth('login', info);
+      await this.endAuth();
+    } catch (e) {
+      console.error('Failed to set connect:', e);
+      this.resetAuth();
+      this.releaseSigner(); // signerもクリーンアップ
+      throw e;
+    }
   }
 
   public async createAccount(nip05: string) {
     const [name, domain] = nip05.split('@');
 
-    // bunker's own url
     const bunkerUrl = await getBunkerUrl(`_@${domain}`, this.params.optionsModal);
     console.log("create account bunker's url", bunkerUrl);
 
-    // parse bunker url and generate local nsec
     const info = bunkerUrlToInfo(bunkerUrl);
     if (!info.signerPubkey) throw new Error('Bad bunker url');
 
     const eventToAddAccount = Boolean(this.params.userInfo);
 
-    // init signer to talk to the bunker (not the user!)
     await this.initSigner(info, { eventToAddAccount });
 
     const userPubkey = await this.signer!.createAccount2({ bunkerPubkey: info.signerPubkey!, name, domain, perms: this.params.optionsModal.perms });
 
     return {
       bunkerUrl: `bunker://${userPubkey}?relay=${info.relays?.[0]}`,
-      sk: info.sk, // reuse the same local key
+      sk: info.sk,
     };
   }
 
   private releaseSigner() {
+    console.log('releaseSigner called');
+    // RPC subscriptionを停止
+    if (this.signer && this.signer.rpc) {
+      try {
+        (this.signer.rpc as any).stop?.();
+      } catch (e) {
+        console.warn('Failed to stop RPC subscription', e);
+      }
+    }
+
+    // signerを削除
     this.signer = null;
-    this.signerErrCallback?.('cancelled');
+
+    // signerPromiseのコールバックを呼んで中断
+    if (this.signerErrCallback) {
+      this.signerErrCallback('cancelled');
+      this.signerErrCallback = undefined;
+    }
+
     this.localSigner = null;
 
-    // disconnect from signer relays
+    // relayから切断
     for (const r of this.ndk.pool.relays.keys()) {
       this.ndk.pool.removeRelay(r);
     }
+
+    // signerPromiseをリセット
+    this.signerPromise = undefined;
   }
 
   public async logout(keepSigner = false) {
     if (!keepSigner) this.releaseSigner();
 
-    // move current to recent
     localStorageRemoveCurrentAccount();
 
-    // notify everyone
     this.onAuth('logout');
 
     this.emit('updateAccounts');
@@ -367,7 +402,6 @@ class AuthNostrService extends EventEmitter implements Signer {
   private onAuth(type: 'login' | 'signup' | 'logout', info: Info | null = null) {
     if (type !== 'logout' && !info) throw new Error('No user info in onAuth');
 
-    // make sure we emulate logout first
     if (info && this.params.userInfo && (info.pubkey !== this.params.userInfo.pubkey || info.authMethod !== this.params.userInfo.authMethod)) {
       const event = new CustomEvent('nlAuth', { detail: { type: 'logout' } });
       console.log('nostr-login auth', event.detail);
@@ -377,7 +411,6 @@ class AuthNostrService extends EventEmitter implements Signer {
     this.setUserInfo(info);
 
     if (info) {
-      // async profile fetch
       fetchProfile(info, this.profileNdk).then(p => {
         if (this.params.userInfo !== info) return;
 
@@ -385,10 +418,6 @@ class AuthNostrService extends EventEmitter implements Signer {
           ...this.params.userInfo,
           picture: p?.image || p?.picture,
           name: p?.name || p?.displayName || p?.nip05 || nip19.npubEncode(info.pubkey),
-          // NOTE: do not overwrite info.nip05 with the one from profile!
-          // info.nip05 refers to nip46 provider,
-          // profile.nip05 is just a fancy name that user has chosen
-          // nip05: p?.nip05
         };
 
         this.setUserInfo(userInfo);
@@ -403,7 +432,6 @@ class AuthNostrService extends EventEmitter implements Signer {
       };
 
       if (type === 'logout') {
-        // reset
         if (this.iframe) this.iframe.remove();
         this.iframe = undefined;
       } else {
@@ -440,12 +468,10 @@ class AuthNostrService extends EventEmitter implements Signer {
   private async createIframe(iframeUrl?: string) {
     if (!iframeUrl) return undefined;
 
-    // ensure iframe
     const url = new URL(iframeUrl);
     const domain = url.hostname;
     let iframe: HTMLIFrameElement | undefined;
 
-    // one iframe per domain
     const did = domain.replaceAll('.', '-');
     const id = '__nostr-login-worker-iframe-' + did;
     iframe = document.querySelector(`#${id}`) as HTMLIFrameElement;
@@ -456,45 +482,24 @@ class AuthNostrService extends EventEmitter implements Signer {
       iframe.setAttribute('height', '0');
       iframe.setAttribute('border', '0');
       iframe.style.display = 'none';
-      // iframe.setAttribute('sandbox', 'allow-forms allow-popups allow-popups-to-escape-sandbox allow-same-origin allow-scripts');
       iframe.id = id;
       document.body.append(iframe);
     }
 
-    // wait until loaded
     iframe.setAttribute('src', iframeUrl);
 
-    // we start listening right now to avoid races
-    // with 'load' event below
     const ready = new ReadyListener(['workerReady', 'workerError'], url.origin);
 
     await new Promise(ok => {
       iframe!.addEventListener('load', ok);
     });
 
-    // now make sure the iframe is ready,
-    // timeout timer starts here
     const r = await ready.wait();
-
-    // FIXME wait until the iframe is ready to accept requests,
-    // maybe it should send us some message?
 
     console.log('nostr-login iframe ready', iframeUrl, r);
 
     return { iframe, port: r[1] as MessagePort };
   }
-
-  // private async getIframeUrl(domain?: string) {
-  //   if (!domain) return '';
-  //   try {
-  //     const r = await fetch(`https://${domain}/.well-known/nostr.json`);
-  //     const data = await r.json();
-  //     return data.nip46?.iframe_url || '';
-  //   } catch (e) {
-  //     console.log('failed to fetch iframe url', e, domain);
-  //     return '';
-  //   }
-  // }
 
   public async sendNeedAuth() {
     const [nostrconnect] = await this.getNostrConnectServices();
@@ -511,29 +516,30 @@ class AuthNostrService extends EventEmitter implements Signer {
     console.log('startAuth');
     if (this.readyCallback) throw new Error('Already started');
 
-    // start the new promise
     this.readyPromise = new Promise<void>(ok => (this.readyCallback = ok));
   }
 
   public async endAuth() {
     console.log('endAuth', this.params.userInfo);
     if (this.params.userInfo && this.params.userInfo.iframeUrl) {
-      // create iframe
       const { iframe, port } = (await this.createIframe(this.params.userInfo.iframeUrl)) || {};
       this.iframe = iframe;
       if (!this.iframe || !port) return;
 
-      // assign iframe to RPC object
       (this.signer!.rpc as IframeNostrRpc).setWorkerIframePort(port);
     }
 
-    this.readyCallback!();
-    this.readyCallback = undefined;
+    if (this.readyCallback) {
+      this.readyCallback();
+      this.readyCallback = undefined;
+    }
   }
 
   public resetAuth() {
-    if (this.readyCallback) this.readyCallback();
-    this.readyCallback = undefined;
+    if (this.readyCallback) {
+      this.readyCallback();
+      this.readyCallback = undefined;
+    }
   }
 
   private async listen(info: Info) {
@@ -544,110 +550,83 @@ class AuthNostrService extends EventEmitter implements Signer {
   }
 
   public async connect(info: Info, perms?: string) {
+    // 修正: reconnect -> connect
     return this.signer!.connect(info.token, perms);
   }
 
   public async initSigner(info: Info, { listen = false, connect = false, eventToAddAccount = false } = {}) {
-    // mutex
+    // 既存のsignerPromiseがあれば待機
     if (this.signerPromise) {
       try {
         await this.signerPromise;
-      } catch {}
+      } catch (e) {
+        // キャンセルされた場合は無視
+        if (e !== 'cancelled') {
+          console.error('Previous signer promise failed:', e);
+        }
+      }
     }
 
-    // we remove support for iframe from nip05 and bunker-url methods,
-    // only nostrconnect flow will use it.
-    // info.iframeUrl = info.iframeUrl || (await this.getIframeUrl(info.domain));
     console.log('initSigner info', info);
 
-    // start listening for the ready signal
     const iframeOrigin = info.iframeUrl ? new URL(info.iframeUrl!).origin : undefined;
     if (iframeOrigin) this.starterReady = new ReadyListener(['starterDone', 'starterError'], iframeOrigin);
 
-    // notify modals so they could show the starter iframe,
-    // FIXME shouldn't this come from nostrconnect service list?
     this.emit('onIframeUrl', info.iframeUrl);
 
-    // AbortControllerでキャンセル可能にする
-    this.signerAbortController = new AbortController();
-    const abortPromise = new Promise<never>((_, reject) => {
-      this.signerAbortController!.signal.addEventListener('abort', () => {
-        reject(new Error('Cancelled by user'));
-      });
-    });
-
     this.signerPromise = new Promise<void>(async (ok, err) => {
-      this.signerErrCallback = err;
+      this.signerErrCallback = error => {
+        console.log('Signer initialization cancelled or failed:', error);
+        err(error);
+      };
+
       try {
-        // タイムアウトとキャンセルの両方に対応
-        await Promise.race([this.initSignerInternal(info, listen, connect, eventToAddAccount, ok), abortPromise]);
+        if (info.relays && !info.iframeUrl) {
+          for (const r of info.relays) {
+            this.ndk.addExplicitRelay(r, undefined);
+          }
+        }
+
+        await this.ndk.connect();
+
+        const localSigner = new PrivateKeySigner(info.sk!);
+        this.signer = new Nip46Signer(this.ndk, localSigner, info.signerPubkey!, iframeOrigin);
+
+        this.signer.on(`iframeRestart`, async () => {
+          const iframeUrl = info.iframeUrl + (info.iframeUrl!.includes('?') ? '&' : '?') + 'pubkey=' + info.pubkey + '&rebind=' + localSigner.pubkey;
+          this.emit('iframeRestart', { pubkey: info.pubkey, iframeUrl });
+        });
+
+        this.signer.on('authUrl', (url: string) => {
+          console.log('nostr login auth url', url);
+          this.emit('onAuthUrl', { url, iframeUrl: info.iframeUrl, eventToAddAccount });
+        });
+
+        if (listen) {
+          await this.listen(info);
+        } else if (connect) {
+          await this.connect(info, this.params.optionsModal.perms);
+        } else {
+          await this.signer!.initUserPubkey(info.pubkey);
+        }
+
+        info.pubkey = this.signer!.userPubkey;
+        info.signerPubkey = this.signer!.remotePubkey;
+
+        console.log('Signer initialized successfully. User pubkey:', info.pubkey, 'Signer pubkey:', info.signerPubkey);
+
+        // コールバックをクリア（正常終了したので不要）
+        this.signerErrCallback = undefined;
+        ok();
       } catch (e) {
-        console.log('initSigner failure', e);
-        // make sure signer isn't set
+        console.error('initSigner failure', e);
         this.signer = null;
-        this.signerAbortController = undefined;
+        this.signerErrCallback = undefined;
         err(e);
       }
     });
 
     return this.signerPromise;
-  }
-
-  private async initSignerInternal(info: Info, listen: boolean, connect: boolean, eventToAddAccount: boolean, resolve: () => void) {
-    // pre-connect if we're creating the connection (listen|connect) or
-    // not iframe mode
-    if (info.relays && !info.iframeUrl) {
-      for (const r of info.relays) {
-        this.ndk.addExplicitRelay(r, undefined);
-      }
-    }
-
-    // wait until we connect, otherwise
-    // signer won't start properly
-    await this.ndk.connect();
-
-    // create and prepare the signer
-    const localSigner = new PrivateKeySigner(info.sk!);
-    this.signer = new Nip46Signer(this.ndk, localSigner, info.signerPubkey!, info.iframeUrl ? new URL(info.iframeUrl!).origin : undefined);
-
-    // we should notify the banner the same way as
-    // the onAuthUrl does
-    this.signer.on(`iframeRestart`, async () => {
-      const iframeUrl = info.iframeUrl + (info.iframeUrl!.includes('?') ? '&' : '?') + 'pubkey=' + info.pubkey + '&rebind=' + localSigner.pubkey;
-      this.emit('iframeRestart', { pubkey: info.pubkey, iframeUrl });
-    });
-
-    // OAuth flow
-    // if (!listen) {
-    this.signer.on('authUrl', (url: string) => {
-      console.log('nostr login auth url', url);
-
-      // notify our UI
-      this.emit('onAuthUrl', { url, iframeUrl: info.iframeUrl, eventToAddAccount });
-    });
-    // }
-
-    if (listen) {
-      // nostrconnect: flow
-      // wait for the incoming message from signer
-      await this.listen(info);
-    } else if (connect) {
-      // bunker: flow
-      // send 'connect' message to signer
-      await this.connect(info, this.params.optionsModal.perms);
-    } else {
-      // provide saved pubkey as a hint
-      await this.signer!.initUserPubkey(info.pubkey);
-    }
-
-    // ensure, we're using it in callbacks above
-    // and expect info to be valid after this call
-    info.pubkey = this.signer!.userPubkey;
-    // learned after nostrconnect flow
-    info.signerPubkey = this.signer!.remotePubkey;
-
-    this.signerAbortController = undefined;
-    resolve();
   }
 
   public async authNip46(
@@ -676,7 +655,6 @@ class AuthNostrService extends EventEmitter implements Signer {
         info.relays = customRelays;
       }
 
-      // console.log('nostr login auth info', info);
       if (!info.signerPubkey || !info.sk || !info.relays?.[0]) {
         throw new Error(`Bad bunker url ${bunkerUrl}`);
       }
@@ -684,74 +662,39 @@ class AuthNostrService extends EventEmitter implements Signer {
       const eventToAddAccount = Boolean(this.params.userInfo);
       console.log('authNip46', type, info);
 
-      // updates the info
       await this.initSigner(info, { connect: true, eventToAddAccount });
 
-      // callback
       this.onAuth(type, info);
     } catch (e) {
-      console.log('nostr login auth failed', e);
-      // make ure it's closed
-      // this.popupManager.closePopup();
+      console.error('nostr login auth failed', e);
       throw e;
     }
   }
 
   public async signEvent(event: any) {
+    // リレー接続を確認して切れていたら再接続
+    await this.ensureRelayConnection();
+
     if (this.localSigner) {
       event.pubkey = getPublicKey(this.localSigner.privateKey!);
       event.id = getEventHash(event);
       event.sig = await this.localSigner.sign(event);
     } else {
-      await this.ensureSigner();
-
-      event.pubkey = this.signer!.remotePubkey;
+      event.pubkey = this.signer?.remotePubkey;
       event.id = getEventHash(event);
-      event.sig = await this.signer!.sign(event);
+      event.sig = await this.signer?.sign(event);
     }
     console.log('signed', { event });
     return event;
   }
 
-  private async ensureSigner() {
-    // signerがキャンセル等で破棄されている場合は再初期化
-    if (!this.signer && this.params.userInfo) {
-      console.log('Signer was destroyed, reinitializing...');
-      await this.initSigner(this.params.userInfo);
-      return; // initSignerで接続も行われるので終了
-    }
+  private async ensureRelayConnection() {
+    // リレーに接続されているか確認
+    const connected = Array.from(this.ndk.pool.relays.values()).some(relay => relay.status === 1); // 1 = CONNECTED
 
-    if (!this.signer) {
-      throw new Error('No signer available');
-    }
-
-    // リレー接続を確認・再接続
-    const stats = this.ndk.pool.stats();
-    console.log('NDK pool stats:', stats);
-
-    if (stats.connected === 0) {
-      console.log('NDK relays disconnected, reinitializing signer...');
-
-      // リレーが完全に切断されている場合、signerも再初期化する必要がある
-      // （RPCサブスクリプションも切断されているため）
-      if (this.params.userInfo) {
-        // 古いsignerを破棄
-        this.signer = null;
-
-        // 既存のリレーを一度切断
-        for (const relay of this.ndk.pool.relays.values()) {
-          try {
-            relay.disconnect();
-          } catch (e) {
-            console.log('Error disconnecting relay:', e);
-          }
-        }
-
-        // signerを再初期化（リレー接続も含む）
-        await this.initSigner(this.params.userInfo);
-      } else {
-        throw new Error('Cannot reconnect: no user info');
-      }
+    if (!connected) {
+      console.log('Relay disconnected, reconnecting...');
+      await this.ndk.connect();
     }
   }
 
@@ -768,42 +711,41 @@ class AuthNostrService extends EventEmitter implements Signer {
   }
 
   public async encrypt04(pubkey: string, plaintext: string) {
+    await this.ensureRelayConnection();
+
     if (this.localSigner) {
       return this.localSigner.encrypt(new NDKUser({ pubkey }), plaintext);
     } else {
-      await this.ensureSigner();
       return this.signer!.encrypt(new NDKUser({ pubkey }), plaintext);
     }
   }
 
   public async decrypt04(pubkey: string, ciphertext: string) {
+    await this.ensureRelayConnection();
+
     if (this.localSigner) {
       return this.localSigner.decrypt(new NDKUser({ pubkey }), ciphertext);
     } else {
-      // decrypt is broken in ndk v2.3.1, and latest
-      // ndk v2.8.1 doesn't allow to override connect easily,
-      // so we reimplement and fix decrypt here as a temporary fix
-      await this.ensureSigner();
       return this.codec_call('nip04_decrypt', pubkey, ciphertext);
     }
   }
 
   public async encrypt44(pubkey: string, plaintext: string) {
+    await this.ensureRelayConnection();
+
     if (this.localSigner) {
       return this.nip44Codec.encrypt(this.localSigner.privateKey!, pubkey, plaintext);
     } else {
-      // no support of nip44 in ndk yet
-      await this.ensureSigner();
       return this.codec_call('nip44_encrypt', pubkey, plaintext);
     }
   }
 
   public async decrypt44(pubkey: string, ciphertext: string) {
+    await this.ensureRelayConnection();
+
     if (this.localSigner) {
       return this.nip44Codec.decrypt(this.localSigner.privateKey!, pubkey, ciphertext);
     } else {
-      // no support of nip44 in ndk yet
-      await this.ensureSigner();
       return this.codec_call('nip44_decrypt', pubkey, ciphertext);
     }
   }

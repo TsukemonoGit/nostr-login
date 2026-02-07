@@ -215,6 +215,12 @@ class ModalManager extends EventEmitter {
             console.log('nostrconnect authUrl', this.modal.authUrl, this.modal.iframeUrl);
           }
 
+          // デフォルトのConnection Stringフロー（csなし）の場合、
+          // コンポーネント側に独自のスピナーがあるのでisLoadingを解除してQRコードを表示させる
+          if (!cs && this.modal) {
+            this.modal.isLoading = false;
+          }
+
           await this.authNostrService.nostrConnect(relay, { domain, link, iframeUrl, customRelays: this.customNip46Relays });
         });
       };

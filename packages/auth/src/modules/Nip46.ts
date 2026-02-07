@@ -1,12 +1,8 @@
+// packages/auth/src/modules/Nip46.ts
+
 import NDK, { NDKEvent, NDKFilter, NDKNip46Signer, NDKNostrRpc, NDKRpcRequest, NDKRpcResponse, NDKSubscription, NDKSubscriptionCacheUsage, NostrEvent } from '@nostr-dev-kit/ndk';
 import { validateEvent, verifySignature } from 'nostr-tools';
 import { PrivateKeySigner } from './Signer';
-import { NIP46_REQUEST_TIMEOUT, NIP46_CONNECT_TIMEOUT } from '../const';
-
-// タイムアウト付きPromiseラッパー
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number, errorMessage: string): Promise<T> {
-  return Promise.race([promise, new Promise<T>((_, reject) => setTimeout(() => reject(new Error(errorMessage)), timeoutMs))]);
-}
 
 class NostrRpc extends NDKNostrRpc {
   protected _ndk: NDK;
@@ -14,19 +10,14 @@ class NostrRpc extends NDKNostrRpc {
   protected requests: Set<string> = new Set();
   private sub?: NDKSubscription;
   protected _useNip44: boolean = false;
-  private reconnectAttempts: number = 0;
-  private maxReconnectAttempts: number = 3;
-  private reconnectDelay: number = 2000;
 
   public constructor(ndk: NDK, signer: PrivateKeySigner) {
     super(ndk, signer, ndk.debug.extend('nip46:signer:rpc'));
     this._ndk = ndk;
     this._signer = signer;
-    this.setupConnectionMonitoring();
   }
 
   public async subscribe(filter: NDKFilter): Promise<NDKSubscription> {
-    // NOTE: fixing ndk
     filter.kinds = filter.kinds?.filter(k => k === 24133);
     this.sub = await super.subscribe(filter);
     return this.sub;
@@ -49,7 +40,6 @@ class NostrRpc extends NDKNostrRpc {
     return ciphertext[l - 28] === '?' && ciphertext[l - 27] === 'i' && ciphertext[l - 26] === 'v' && ciphertext[l - 25] === '=';
   }
 
-  // override to auto-decrypt nip04/nip44
   public async parseEvent(event: NDKEvent): Promise<NDKRpcRequest | NDKRpcResponse> {
     const remoteUser = this._ndk.getUser({ pubkey: event.pubkey });
     remoteUser.ndk = this._ndk;
@@ -71,163 +61,94 @@ class NostrRpc extends NDKNostrRpc {
     console.log('nostr connect parsedEvent', parsedEvent);
     if (!(parsedEvent as NDKRpcRequest).method) {
       const response = parsedEvent as NDKRpcResponse;
-      if (response.result !== secret) throw new Error(response.error);
+      if (response.result !== secret) throw new Error(response.error || 'Invalid secret in reply');
       return event.pubkey;
     } else {
       throw new Error('Bad nostr connect reply');
     }
   }
 
-  // ndk doesn't support nostrconnect:
-  // we just listed to an unsolicited reply to
-  // our pubkey and if it's ack/secret - we're fine
+  // 修正: listen メソッドの改善
   public async listen(nostrConnectSecret: string): Promise<string> {
     const pubkey = this._signer.pubkey;
-    console.log('nostr-login listening for conn to', pubkey);
+    console.log('nostr-login listening for conn to', pubkey, 'expecting secret:', nostrConnectSecret);
+    
     const sub = await this.subscribe({
       'kinds': [24133],
       '#p': [pubkey],
     });
+    
     return new Promise<string>((ok, err) => {
+      const timeout = setTimeout(() => {
+        this.stop();
+        err(new Error('Connection timeout: no response from signer'));
+      }, 60000); // 60秒のタイムアウト
+
       sub.on('event', async (event: NDKEvent) => {
         try {
           const parsedEvent = await this.parseEvent(event);
-          // console.log('ack parsedEvent', parsedEvent);
+          console.log('listen parsedEvent', parsedEvent);
+          
           if (!(parsedEvent as NDKRpcRequest).method) {
             const response = parsedEvent as NDKRpcResponse;
 
-            // ignore
-            if (response.result === 'auth_url') return;
+            // auth_urlは無視
+            if (response.result === 'auth_url') {
+              console.log('Ignoring auth_url response in listen');
+              return;
+            }
 
-            // FIXME for now accept 'ack' replies, later on only
-            // accept secrets
-            if (response.result === 'ack' || response.result === nostrConnectSecret) {
+            // secretの厳密な検証
+            if (response.result === nostrConnectSecret) {
+              clearTimeout(timeout);
+              this.stop();
+              console.log('Connection established with signer:', event.pubkey);
+              ok(event.pubkey);
+            } else if (response.result === 'ack') {
+              // ackは古い実装用の互換性のため警告のみ
+              console.warn('Received "ack" instead of secret. This may indicate an older signer implementation.');
+              clearTimeout(timeout);
+              this.stop();
               ok(event.pubkey);
             } else {
-              err(response.error);
+              console.error('Invalid response:', response);
+              clearTimeout(timeout);
+              this.stop();
+              err(new Error(response.error || 'Invalid connection response'));
             }
           }
         } catch (e) {
-          console.log('error parsing event', e, event.rawEvent());
+          console.error('Error parsing event in listen', e, event.rawEvent());
         }
-        // done
-        this.stop();
+      });
+
+      sub.on('eose', () => {
+        console.log('EOSE received in listen');
       });
     });
   }
 
-  // since ndk doesn't yet support perms param
-  // we reimplement the 'connect' call here
-  // instead of await signer.blockUntilReady();
   public async connect(pubkey: string, token?: string, perms?: string) {
+    console.log('Sending connect request to', pubkey, 'with perms:', perms);
+    
     return new Promise<void>((ok, err) => {
+      const timeout = setTimeout(() => {
+        err(new Error('Connect timeout: no response from signer'));
+      }, 30000); // 30秒のタイムアウト
+
       const connectParams = [pubkey!, token || '', perms || ''];
       this.sendRequest(pubkey!, 'connect', connectParams, 24133, (response: NDKRpcResponse) => {
+        clearTimeout(timeout);
+        
         if (response.result === 'ack') {
+          console.log('Connect acknowledged by signer');
           ok();
         } else {
-          err(response.error);
+          console.error('Connect failed:', response.error);
+          err(new Error(response.error || 'Connection rejected by signer'));
         }
       });
     });
-  }
-
-  // タイムアウト対応のconnect
-  public async connectWithTimeout(pubkey: string, token?: string, perms?: string, timeoutMs: number = NIP46_CONNECT_TIMEOUT): Promise<void> {
-    return withTimeout(this.connect(pubkey, token, perms), timeoutMs, `Connection timeout after ${timeoutMs}ms`);
-  }
-
-  // タイムアウト対応のsendRequest
-  public async sendRequestWithTimeout(
-    remotePubkey: string,
-    method: string,
-    params: string[] = [],
-    kind = 24133,
-    timeoutMs: number = NIP46_REQUEST_TIMEOUT,
-  ): Promise<NDKRpcResponse> {
-    return withTimeout(
-      new Promise<NDKRpcResponse>((resolve, reject) => {
-        this.sendRequest(remotePubkey, method, params, kind, response => {
-          if (response.error) {
-            reject(new Error(response.error));
-          } else {
-            resolve(response);
-          }
-        });
-      }),
-      timeoutMs,
-      `Request timeout after ${timeoutMs}ms for method: ${method}`,
-    );
-  }
-
-  // 接続監視のセットアップ
-  private setupConnectionMonitoring() {
-    // アプリがフォアグラウンドに戻ったときの処理
-    if (typeof document !== 'undefined') {
-      document.addEventListener('visibilitychange', async () => {
-        if (document.visibilityState === 'visible') {
-          console.log('App visible, checking relay connections...');
-          await this.ensureConnected();
-        }
-      });
-    }
-
-    // オンライン/オフライン検知
-    if (typeof window !== 'undefined') {
-      window.addEventListener('online', async () => {
-        console.log('Network online, reconnecting relays...');
-        await this.reconnect();
-      });
-    }
-  }
-
-  // 接続を確認して必要なら再接続
-  private async ensureConnected(): Promise<void> {
-    const connectedRelays = Array.from(this._ndk.pool.relays.values()).filter(r => r.status === 1); // 1 = CONNECTED
-
-    if (connectedRelays.length === 0) {
-      console.log('No connected relays, attempting reconnection...');
-      await this.reconnect();
-    }
-  }
-
-  // 再接続処理
-  protected async reconnect(): Promise<void> {
-    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.error('Max reconnection attempts reached');
-      this.emit('reconnectFailed');
-      return;
-    }
-
-    this.reconnectAttempts++;
-    console.log(`Reconnection attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts}`);
-
-    try {
-      // サブスクリプションを停止
-      if (this.sub) {
-        this.sub.stop();
-      }
-
-      // 少し待ってから再接続
-      await new Promise(resolve => setTimeout(resolve, this.reconnectDelay));
-
-      // 再接続
-      await this._ndk.connect();
-
-      // サブスクリプションを再開
-      if (this.sub) {
-        await this.sub.start();
-      }
-
-      this.reconnectAttempts = 0;
-      this.emit('reconnected');
-      console.log('Successfully reconnected to relays');
-    } catch (e) {
-      console.error('Reconnection failed:', e);
-
-      // リトライ
-      setTimeout(() => this.reconnect(), this.reconnectDelay * this.reconnectAttempts);
-    }
   }
 
   protected getId(): string {
@@ -237,21 +158,13 @@ class NostrRpc extends NDKNostrRpc {
   public async sendRequest(remotePubkey: string, method: string, params: string[] = [], kind = 24133, cb?: (res: NDKRpcResponse) => void): Promise<NDKRpcResponse> {
     const id = this.getId();
 
-    // response handler will deduplicate auth urls and responses
     this.setResponseHandler(id, cb);
 
-    // create and sign request
     const event = await this.createRequestEvent(id, remotePubkey, method, params, kind);
-    console.log('sendRequest', { event, method, remotePubkey, params });
+    console.log("sendRequest", { event, method, remotePubkey, params });
 
-    // send to relays
     await event.publish();
 
-    // NOTE: ndk returns a promise that never resolves and
-    // in fact REQUIRES cb to be provided (otherwise no way
-    // to consume the result), we've already stepped on the bug
-    // of waiting for this unresolvable result, so now we return
-    // undefined to make sure waiters fail, not hang.
     // @ts-ignore
     return undefined as NDKRpcResponse;
   }
@@ -306,9 +219,6 @@ export class IframeNostrRpc extends NostrRpc {
   private peerOrigin?: string;
   private iframePort?: MessagePort;
   private iframeRequests = new Map<string, { id: string; pubkey: string }>();
-  private heartbeatInterval?: number;
-  private lastResponseTime: number = Date.now();
-  private heartbeatTimeoutMs: number = 30000; // 30秒応答がなければ再接続
 
   public constructor(ndk: NDK, localSigner: PrivateKeySigner, iframePeerOrigin?: string) {
     super(ndk, localSigner);
@@ -322,41 +232,17 @@ export class IframeNostrRpc extends NostrRpc {
       this._ndk,
       {},
       {
-        // don't send to relay
         closeOnEose: true,
         cacheUsage: NDKSubscriptionCacheUsage.ONLY_CACHE,
       },
     );
   }
 
-  // ハートビート開始
-  private startHeartbeat() {
-    this.stopHeartbeat();
-
-    this.heartbeatInterval = window.setInterval(async () => {
-      const timeSinceLastResponse = Date.now() - this.lastResponseTime;
-
-      if (timeSinceLastResponse > this.heartbeatTimeoutMs) {
-        console.warn('No response from relay for too long, reconnecting...');
-        await this.reconnect();
-      }
-    }, 10000); // 10秒ごとにチェック
-  }
-
-  private stopHeartbeat() {
-    if (this.heartbeatInterval) {
-      clearInterval(this.heartbeatInterval);
-      this.heartbeatInterval = undefined;
-    }
-  }
-
   public setWorkerIframePort(port: MessagePort) {
     if (!this.peerOrigin) throw new Error('Unexpected iframe port');
 
     this.iframePort = port;
-    this.startHeartbeat();
 
-    // to make sure Chrome doesn't terminate the channel
     setInterval(() => {
       console.log('iframe-nip46 ping');
       this.iframePort!.postMessage('ping');
@@ -371,7 +257,6 @@ export class IframeNostrRpc extends NostrRpc {
         return;
       }
 
-      // a copy-paste from rpc.subscribe
       try {
         const event = ev.data;
 
@@ -379,9 +264,7 @@ export class IframeNostrRpc extends NostrRpc {
         if (!verifySignature(event)) throw new Error('Invalid event signature from iframe');
         const nevent = new NDKEvent(this._ndk, event);
         const parsedEvent = await this.parseEvent(nevent);
-        // レスポンス受信時にタイムスタンプを更新
-        this.lastResponseTime = Date.now();
-        // we're only implementing client-side rpc
+        
         if (!(parsedEvent as NDKRpcRequest).method) {
           console.log('parsed response', parsedEvent);
           this.emit(`response-${parsedEvent.id}`, parsedEvent);
@@ -395,29 +278,19 @@ export class IframeNostrRpc extends NostrRpc {
   public async sendRequest(remotePubkey: string, method: string, params: string[] = [], kind = 24133, cb?: (res: NDKRpcResponse) => void): Promise<NDKRpcResponse> {
     const id = this.getId();
 
-    // create and sign request event
     const event = await this.createRequestEvent(id, remotePubkey, method, params, kind);
 
-    // set response handler, it will dedup auth urls,
-    // and also dedup response handlers - we're sending
-    // to relays and to iframe
     this.setResponseHandler(id, cb);
 
     if (this.iframePort) {
-      // map request event id to request id, if iframe
-      // has no key it will reply with error:event_id (it can't
-      // decrypt the request id without keys)
       this.iframeRequests.set(event.id, { id, pubkey: remotePubkey });
 
-      // send to iframe
       console.log('iframe-nip46 sending request to', this.peerOrigin, event.rawEvent());
       this.iframePort.postMessage(event.rawEvent());
     } else {
-      // send to relays
       await event.publish();
     }
 
-    // see notes in 'super'
     // @ts-ignore
     return undefined as NDKRpcResponse;
   }
@@ -434,14 +307,11 @@ export class ReadyListener {
     this.promise = new Promise<any>(ok => {
       console.log(new Date(), 'started listener for', this.messages);
 
-      // ready message handler
       const onReady = async (e: MessageEvent) => {
         const originHostname = new URL(origin!).hostname;
         const messageHostname = new URL(e.origin).hostname;
-        // same host or subdomain
         const validHost = messageHostname === originHostname || messageHostname.endsWith('.' + originHostname);
         if (!validHost || !Array.isArray(e.data) || !e.data.length || !this.messages.includes(e.data[0])) {
-          // console.log(new Date(), 'got invalid ready message', e.origin, e.data);
           return;
         }
 
@@ -456,17 +326,6 @@ export class ReadyListener {
   async wait(): Promise<any> {
     console.log(new Date(), 'waiting for', this.messages);
     const r = await this.promise;
-    // NOTE: timer here doesn't help bcs it must be activated when
-    // user "confirms", but that's happening on a different
-    // origin and we can't really know.
-    // await new Promise<any>((ok, err) => {
-    //   // 10 sec should be more than enough
-    //   setTimeout(() => err(new Date() + ' timeout for ' + this.message), 10000);
-
-    //   // if promise already resolved or will resolve in the future
-    //   this.promise.then(ok);
-    // });
-
     console.log(new Date(), 'finished waiting for', this.messages, r);
     return r;
   }
@@ -479,9 +338,8 @@ export class Nip46Signer extends NDKNip46Signer {
   constructor(ndk: NDK, localSigner: PrivateKeySigner, signerPubkey: string, iframeOrigin?: string) {
     super(ndk, signerPubkey, localSigner);
 
-    // override with our own rpc implementation
     this._rpc = new IframeNostrRpc(ndk, localSigner, iframeOrigin);
-    this._rpc.setUseNip44(true); // !!this.params.optionsModal.dev);
+    this._rpc.setUseNip44(true);
     this._rpc.on('authUrl', (url: string) => {
       this.emit('authUrl', url);
     });
@@ -494,44 +352,50 @@ export class Nip46Signer extends NDKNip46Signer {
   }
 
   private async setSignerPubkey(signerPubkey: string, sameAsUser: boolean = false) {
-    console.log('setSignerPubkey', signerPubkey);
+    console.log("setSignerPubkey", signerPubkey);
 
-    // ensure it's set
     this.remotePubkey = signerPubkey;
 
-    // when we're sure it's known
     this._rpc.on(`iframeRestart-${signerPubkey}`, () => {
       this.emit('iframeRestart');
     });
 
-    // now call getPublicKey and swap remotePubkey w/ that
     await this.initUserPubkey(sameAsUser ? signerPubkey : '');
   }
 
   public async initUserPubkey(hintPubkey?: string) {
-    if (this._userPubkey) throw new Error('Already called initUserPubkey');
-
-    if (hintPubkey) {
-      this._userPubkey = hintPubkey;
+    if (this._userPubkey) {
+      console.warn('initUserPubkey already called, pubkey:', this._userPubkey);
       return;
     }
 
-    this._userPubkey = await withTimeout(
-      new Promise<string>((ok, err) => {
-        if (!this.remotePubkey) throw new Error('Signer pubkey not set');
+    if (hintPubkey) {
+      this._userPubkey = hintPubkey;
+      console.log('User pubkey set from hint:', this._userPubkey);
+      return;
+    }
 
-        console.log('get_public_key', this.remotePubkey);
-        this._rpc.sendRequest(this.remotePubkey, 'get_public_key', [], 24133, (response: NDKRpcResponse) => {
-          if (response.error) {
-            err(new Error(response.error));
-          } else {
-            ok(response.result);
-          }
-        });
-      }),
-      NIP46_REQUEST_TIMEOUT,
-      'Timeout getting public key',
-    );
+    console.log('Requesting user pubkey from signer:', this.remotePubkey);
+    
+    this._userPubkey = await new Promise<string>((ok, err) => {
+      if (!this.remotePubkey) throw new Error('Signer pubkey not set');
+
+      const timeout = setTimeout(() => {
+        err(new Error('Timeout getting user pubkey'));
+      }, 30000);
+
+      console.log("get_public_key", this.remotePubkey);
+      this._rpc.sendRequest(this.remotePubkey, 'get_public_key', [], 24133, (response: NDKRpcResponse) => {
+        clearTimeout(timeout);
+        
+        if (response.error) {
+          err(new Error(response.error));
+        } else {
+          console.log('User pubkey received:', response.result);
+          ok(response.result);
+        }
+      });
+    });
   }
 
   public async listen(nostrConnectSecret: string) {
@@ -541,7 +405,7 @@ export class Nip46Signer extends NDKNip46Signer {
 
   public async connect(token?: string, perms?: string) {
     if (!this.remotePubkey) throw new Error('No signer pubkey');
-    await (this._rpc as any).connectWithTimeout(this.remotePubkey, token, perms, NIP46_CONNECT_TIMEOUT);
+    await this._rpc.connect(this.remotePubkey, token, perms);
     await this.setSignerPubkey(this.remotePubkey);
   }
 
@@ -554,17 +418,24 @@ export class Nip46Signer extends NDKNip46Signer {
     const params = [
       name,
       domain,
-      '', // email
+      '',
       perms,
     ];
 
-    const r = await new Promise<NDKRpcResponse>(ok => {
-      this.rpc.sendRequest(bunkerPubkey, 'create_account', params, undefined, ok);
+    const r = await new Promise<NDKRpcResponse>((ok, err) => {
+      const timeout = setTimeout(() => {
+        err(new Error('Timeout creating account'));
+      }, 60000);
+
+      this.rpc.sendRequest(bunkerPubkey, 'create_account', params, undefined, (response) => {
+        clearTimeout(timeout);
+        ok(response);
+      });
     });
 
-    console.log('create_account pubkey', r);
-    if (r.result === 'error') {
-      throw new Error(r.error);
+    console.log('create_account response', r);
+    if (r.result === 'error' || r.error) {
+      throw new Error(r.error || 'Failed to create account');
     }
 
     return r.result;
