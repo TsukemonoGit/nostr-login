@@ -1,7 +1,7 @@
 {
   "name": "@konemono/nostr-login",
   "version": "1.12.5",
-  "description": "",
+  "description": "Extended fork of nostr-login with multi-relay support, QR scanner, and improved stability",
   "main": "./dist/index.esm.js",
   "types": "./dist/index.d.ts",
   "type": "module",
@@ -10,6 +10,16 @@
     "format": "npx prettier --write src"
   },
   "author": "a-fralou",
+  "contributors": [
+    "TsukemonoGit"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/TsukemonoGit/nostr-login.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "dependencies": {
     "@nostr-dev-kit/ndk": "^2.3.1",
     "events": "^3.3.0",
