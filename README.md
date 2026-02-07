@@ -1,3 +1,17 @@
+## 🔀 このフォークについて
+
+このリポジトリは [nostr-protocol/nostr-login](https://github.com/nostr-protocol/nostr-login) のフォークです。
+元リポジトリに対し、以下の機能を追加・改善しています：
+
+| 機能 | 説明 |
+|------|------|
+| **複数リレー対応** | 単一リレー固定 → 任意の複数リレー設定可能 |
+| **QRコード読み取り** | bunkerURLの手入力のみ → QRコードスキャン対応 |
+| **安定性改善** | 無限ローディング問題を解消（タイムアウト設定・キャンセル機能追加）|
+
+**npm:** `npm install @konemono/nostr-login`
+---
+
 Nostr-Login
 ===========
 
