@@ -18,8 +18,10 @@ export class NlSigninBunkerUrl {
   @Event() nlCheckLogin: EventEmitter<string>;
   @Event() nlRelaysChanged: EventEmitter<string[]>;
 
-  private scanner: QrScanner | null = null;
-  private videoElement: HTMLVideoElement;
+  private videoEl: HTMLVideoElement | null = null;
+  private stream: MediaStream | null = null;
+  private scannerContainer: HTMLDivElement;
+  private scanInterval: ReturnType<typeof setInterval> | null = null;
 
   handleInputChange(event: Event) {
     state.nlSigninBunkerUrl.loginName = (event.target as HTMLInputElement).value;
@@ -37,44 +39,71 @@ export class NlSigninBunkerUrl {
     this.scanError = '';
     this.isScanning = true;
 
-    // Wait for the video element to be rendered
+    // Wait for the container element to be rendered
     await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 
-    if (!this.videoElement) {
+    if (!this.scannerContainer) {
       this.scanError = 'Camera not available';
       this.isScanning = false;
       return;
     }
 
     try {
-      this.scanner = new QrScanner(
-        this.videoElement,
-        result => {
+      // getUserMedia で直接カメラストリームを取得
+      // (qr-scanner のコンストラクタは dialog 内で video を非表示にしてしまうため使わない)
+      this.stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment' },
+        audio: false,
+      });
+
+      // video 要素を作成してカメラプレビューを表示
+      this.videoEl = document.createElement('video');
+      this.videoEl.setAttribute('playsinline', '');
+      this.videoEl.setAttribute('autoplay', '');
+      this.videoEl.muted = true;
+      this.videoEl.style.width = '100%';
+      this.videoEl.style.height = '100%';
+      this.videoEl.style.objectFit = 'cover';
+      this.videoEl.style.display = 'block';
+      this.videoEl.srcObject = this.stream;
+      this.scannerContainer.appendChild(this.videoEl);
+      await this.videoEl.play();
+
+      // 定期的にフレームをキャプチャして QR コードを解析
+      this.scanInterval = setInterval(async () => {
+        if (!this.videoEl || this.videoEl.readyState < 2) return;
+        try {
+          const result = await QrScanner.scanImage(this.videoEl, { returnDetailedScanResult: true });
           const data = result.data;
-          if (data.startsWith('bunker://') || data.startsWith('nostrconnect://')) {
+          if (data && (data.startsWith('bunker://') || data.startsWith('nostrconnect://'))) {
             state.nlSigninBunkerUrl.loginName = data;
             this.nlCheckLogin.emit(data);
             this.stopScan();
           }
-        },
-        {
-          highlightScanRegion: true,
-          highlightCodeOutline: true,
-        },
-      );
-      await this.scanner.start();
+        } catch (_e) {
+          // QR コードが見つからない場合は無視（毎フレーム発生する）
+        }
+      }, 250);
     } catch (e) {
       console.error('QR Scanner error:', e);
-      this.scanError = 'Failed to access camera';
+      this.scanError = e instanceof Error ? e.message : 'Failed to access camera';
       this.isScanning = false;
     }
   }
 
   stopScan() {
-    if (this.scanner) {
-      this.scanner.stop();
-      this.scanner.destroy();
-      this.scanner = null;
+    if (this.scanInterval) {
+      clearInterval(this.scanInterval);
+      this.scanInterval = null;
+    }
+    if (this.stream) {
+      this.stream.getTracks().forEach(track => track.stop());
+      this.stream = null;
+    }
+    if (this.videoEl) {
+      this.videoEl.srcObject = null;
+      this.videoEl.remove();
+      this.videoEl = null;
     }
     this.isScanning = false;
   }
@@ -121,9 +150,11 @@ export class NlSigninBunkerUrl {
           {/* QR Scanner */}
           {this.isScanning ? (
             <div class="mb-3">
-              <div class="relative rounded-lg overflow-hidden bg-black" style={{ aspectRatio: '1' }}>
-                <video ref={el => (this.videoElement = el as HTMLVideoElement)} style={{ width: '100%', height: '100%', objectFit: 'cover' }}></video>
-              </div>
+              <div
+                ref={el => (this.scannerContainer = el as HTMLDivElement)}
+                class="relative rounded-lg overflow-hidden bg-black"
+                style={{ aspectRatio: '1', width: '100%' }}
+              ></div>
               <button type="button" onClick={() => this.stopScan()} class="nl-action-button mt-2 w-full py-2 px-4 text-sm font-medium rounded-lg border border-transparent">
                 Cancel
               </button>
