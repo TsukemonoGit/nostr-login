@@ -120,6 +120,22 @@ class AuthNostrService extends EventEmitter implements Signer {
     this.cancelNostrConnect();
   }
 
+  /**
+   * signerインスタンスを保持したまま、進行中のRPCリクエストだけキャンセルする。
+   * オフライン→タイムアウト時のcancelTimeoutで使用。
+   * signerを破壊しないため、オンライン復帰後にそのまま署名を再開できる。
+   */
+  public cancelPendingRequests() {
+    console.log('cancelPendingRequests called (signer preserved)');
+    if (this.signer && this.signer.rpc) {
+      try {
+        (this.signer.rpc as any).clearPendingRequests?.();
+      } catch (e) {
+        console.warn('Failed to clear pending requests', e);
+      }
+    }
+  }
+
   public async nostrConnect(
     relay?: string,
     {
@@ -691,8 +707,11 @@ class AuthNostrService extends EventEmitter implements Signer {
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
+        if (!this.signer) {
+          throw new Error('Signer is not initialized. Please reconnect.');
+        }
         await this.ensureRelayConnection();
-        event.pubkey = this.signer?.remotePubkey;
+        event.pubkey = this.signer.remotePubkey;
         event.id = getEventHash(event);
         event.sig = await this.signer?.sign(event);
         console.log('signed', { event, attempt });

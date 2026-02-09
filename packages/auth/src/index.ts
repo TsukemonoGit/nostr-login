@@ -147,7 +147,9 @@ export class NostrLoginInitializer {
     });
 
     this.bannerManager.on('cancelTimeout', () => {
-      this.authNostrService.cancelSignerInit();
+      // signerインスタンスは保持し、進行中のRPCリクエストだけキャンセルする
+      // （オンライン復帰後にsignerを再利用できるようにするため）
+      this.authNostrService.cancelPendingRequests();
       this.processManager.cancelAllPendingCalls();
       this.bannerManager.onCallEnd();
     });
