@@ -7,9 +7,9 @@
 
 ## Properties
 
-| Property        | Attribute | Description | Type       | Default                                                      |
-| --------------- | --------- | ----------- | ---------- | ------------------------------------------------------------ |
-| `defaultRelays` | --        |             | `string[]` | `['wss://relay.nsec.app/', 'wss://ephemeral.snowflare.cc/']` |
+| Property        | Attribute | Description                           | Type       | Default                       |
+| --------------- | --------- | ------------------------------------- | ---------- | ----------------------------- |
+| `defaultRelays` | --        | 親から渡される現在のリレーリスト（localStorage由来の場合あり） | `string[]` | `[...FACTORY_DEFAULT_RELAYS]` |
 
 
 ## Events

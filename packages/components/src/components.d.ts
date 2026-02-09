@@ -102,6 +102,9 @@ export namespace Components {
         "info": RecentType | Info | undefined;
     }
     interface NlNip46RelaySettings {
+        /**
+          * 親から渡される現在のリレーリスト（localStorage由来の場合あり）
+         */
         "defaultRelays": string[];
     }
     interface NlOtpMigrate {
@@ -808,6 +811,9 @@ declare namespace LocalJSX {
         "info"?: RecentType | Info | undefined;
     }
     interface NlNip46RelaySettings {
+        /**
+          * 親から渡される現在のリレーリスト（localStorage由来の場合あり）
+         */
         "defaultRelays"?: string[];
         "onNlRelaysChanged"?: (event: NlNip46RelaySettingsCustomEvent<string[]>) => void;
     }

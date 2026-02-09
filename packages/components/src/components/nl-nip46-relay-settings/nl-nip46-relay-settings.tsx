@@ -1,12 +1,16 @@
 import { Component, h, State, Event, EventEmitter, Prop } from '@stencil/core';
 
+/** リセット時に戻すハードコード済みデフォルトリレー */
+const FACTORY_DEFAULT_RELAYS = ['wss://relay.nsec.app/', 'wss://ephemeral.snowflare.cc/'];
+
 @Component({
   tag: 'nl-nip46-relay-settings',
   styleUrl: 'nl-nip46-relay-settings.css',
   shadow: false,
 })
 export class NlNip46RelaySettings {
-  @Prop() defaultRelays: string[] = ['wss://relay.nsec.app/', 'wss://ephemeral.snowflare.cc/'];
+  /** 親から渡される現在のリレーリスト（localStorage由来の場合あり） */
+  @Prop() defaultRelays: string[] = [...FACTORY_DEFAULT_RELAYS];
 
   @State() relays: string[] = [];
   @State() newRelay: string = '';
@@ -14,10 +18,7 @@ export class NlNip46RelaySettings {
 
   @Event() nlRelaysChanged: EventEmitter<string[]>;
 
-  private initialDefaults: string[] = [];
-
   componentWillLoad() {
-    this.initialDefaults = [...this.defaultRelays];
     this.relays = [...this.defaultRelays];
   }
 
@@ -38,7 +39,7 @@ export class NlNip46RelaySettings {
   }
 
   resetToDefaults() {
-    this.relays = [...this.initialDefaults];
+    this.relays = [...FACTORY_DEFAULT_RELAYS];
     this.nlRelaysChanged.emit(this.relays);
   }
 
