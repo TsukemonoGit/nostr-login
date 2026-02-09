@@ -14,7 +14,10 @@ export class NlNip46RelaySettings {
 
   @Event() nlRelaysChanged: EventEmitter<string[]>;
 
+  private initialDefaults: string[] = [];
+
   componentWillLoad() {
+    this.initialDefaults = [...this.defaultRelays];
     this.relays = [...this.defaultRelays];
   }
 
@@ -35,7 +38,7 @@ export class NlNip46RelaySettings {
   }
 
   resetToDefaults() {
-    this.relays = [...this.defaultRelays];
+    this.relays = [...this.initialDefaults];
     this.nlRelaysChanged.emit(this.relays);
   }
 

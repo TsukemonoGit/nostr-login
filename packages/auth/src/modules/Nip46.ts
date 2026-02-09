@@ -3,12 +3,29 @@
 import NDK, { NDKEvent, NDKFilter, NDKNip46Signer, NDKNostrRpc, NDKRpcRequest, NDKRpcResponse, NDKSubscription, NDKSubscriptionCacheUsage, NostrEvent } from '@nostr-dev-kit/ndk';
 import { validateEvent, verifySignature } from 'nostr-tools';
 import { PrivateKeySigner } from './Signer';
+import { NIP46_REQUEST_TIMEOUT } from '../const';
+
+export type Nip46ErrorCode = 'TIMEOUT' | 'RELAY_DISCONNECTED' | 'SIGNER_REJECTED' | 'CANCELLED' | 'UNKNOWN';
+
+export class Nip46Error extends Error {
+  public code: Nip46ErrorCode;
+  constructor(message: string, code: Nip46ErrorCode) {
+    super(message);
+    this.name = 'Nip46Error';
+    this.code = code;
+  }
+  get retryable() {
+    return this.code === 'TIMEOUT' || this.code === 'RELAY_DISCONNECTED';
+  }
+}
 
 class NostrRpc extends NDKNostrRpc {
   protected _ndk: NDK;
   protected _signer: PrivateKeySigner;
   protected requests: Set<string> = new Set();
   private sub?: NDKSubscription;
+  private lastSubscribeFilter?: NDKFilter;
+  private requestTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
   protected _useNip44: boolean = false;
 
   public constructor(ndk: NDK, signer: PrivateKeySigner) {
@@ -19,6 +36,7 @@ class NostrRpc extends NDKNostrRpc {
 
   public async subscribe(filter: NDKFilter): Promise<NDKSubscription> {
     filter.kinds = filter.kinds?.filter(k => k === 24133);
+    this.lastSubscribeFilter = { ...filter };
     this.sub = await super.subscribe(filter);
     return this.sub;
   }
@@ -28,6 +46,44 @@ class NostrRpc extends NDKNostrRpc {
       this.sub.stop();
       this.sub = undefined;
     }
+  }
+
+  /**
+   * リレー再接続後にsubscriptionを再開する。
+   * 前回のsubscribeで使ったフィルタを再利用する。
+   */
+  public async resubscribe(): Promise<void> {
+    if (!this.lastSubscribeFilter) {
+      console.warn('resubscribe: no previous filter to resubscribe with');
+      return;
+    }
+    console.log('resubscribe: re-subscribing with filter', this.lastSubscribeFilter);
+    this.stop();
+    await this.subscribe(this.lastSubscribeFilter);
+  }
+
+  /**
+   * subscriptionが生きているかチェック。
+   * リレーが再接続されてもsubscriptionは自動復活しないので、
+   * 署名前にこれで確認する。
+   */
+  public isSubscriptionActive(): boolean {
+    // iframe経由の場合はsubscription不要
+    if (!this.lastSubscribeFilter) return true;
+    return !!this.sub;
+  }
+
+  /**
+   * 保留中のリクエストとタイマーをすべてクリアする。
+   * キャンセル時やsigner解放時に呼ぶ。
+   */
+  public clearPendingRequests() {
+    for (const [id, timer] of this.requestTimers.entries()) {
+      clearTimeout(timer);
+      this.requestTimers.delete(id);
+    }
+    this.requests.clear();
+    console.log('clearPendingRequests: all pending requests cleared');
   }
 
   public setUseNip44(useNip44: boolean) {
@@ -72,12 +128,12 @@ class NostrRpc extends NDKNostrRpc {
   public async listen(nostrConnectSecret: string): Promise<string> {
     const pubkey = this._signer.pubkey;
     console.log('nostr-login listening for conn to', pubkey, 'expecting secret:', nostrConnectSecret);
-    
+
     const sub = await this.subscribe({
       'kinds': [24133],
       '#p': [pubkey],
     });
-    
+
     return new Promise<string>((ok, err) => {
       const timeout = setTimeout(() => {
         this.stop();
@@ -88,7 +144,7 @@ class NostrRpc extends NDKNostrRpc {
         try {
           const parsedEvent = await this.parseEvent(event);
           console.log('listen parsedEvent', parsedEvent);
-          
+
           if (!(parsedEvent as NDKRpcRequest).method) {
             const response = parsedEvent as NDKRpcResponse;
 
@@ -130,7 +186,7 @@ class NostrRpc extends NDKNostrRpc {
 
   public async connect(pubkey: string, token?: string, perms?: string) {
     console.log('Sending connect request to', pubkey, 'with perms:', perms);
-    
+
     return new Promise<void>((ok, err) => {
       const timeout = setTimeout(() => {
         err(new Error('Connect timeout: no response from signer'));
@@ -139,7 +195,7 @@ class NostrRpc extends NDKNostrRpc {
       const connectParams = [pubkey!, token || '', perms || ''];
       this.sendRequest(pubkey!, 'connect', connectParams, 24133, (response: NDKRpcResponse) => {
         clearTimeout(timeout);
-        
+
         if (response.result === 'ack') {
           console.log('Connect acknowledged by signer');
           ok();
@@ -161,7 +217,7 @@ class NostrRpc extends NDKNostrRpc {
     this.setResponseHandler(id, cb);
 
     const event = await this.createRequestEvent(id, remotePubkey, method, params, kind);
-    console.log("sendRequest", { event, method, remotePubkey, params });
+    console.log('sendRequest', { event, method, remotePubkey, params });
 
     await event.publish();
 
@@ -171,18 +227,52 @@ class NostrRpc extends NDKNostrRpc {
 
   protected setResponseHandler(id: string, cb?: (res: NDKRpcResponse) => void) {
     let authUrlSent = false;
+    let authUrlReceived = false;
     const now = Date.now();
+
+    const cleanup = () => {
+      const timer = this.requestTimers.get(id);
+      if (timer) {
+        clearTimeout(timer);
+        this.requestTimers.delete(id);
+      }
+      this.requests.delete(id);
+    };
+
+    // タイムアウト: auth_url が来ていればユーザー操作待ちなので延長
+    const getTimeout = () => (authUrlReceived ? NIP46_REQUEST_TIMEOUT * 4 : NIP46_REQUEST_TIMEOUT);
+
+    const startTimer = () => {
+      // 既存のタイマーをクリア
+      const existing = this.requestTimers.get(id);
+      if (existing) clearTimeout(existing);
+
+      const timer = setTimeout(() => {
+        console.warn(`nip46 request ${id} timed out after ${Date.now() - now}ms (authUrl=${authUrlReceived})`);
+        cleanup();
+        if (cb) {
+          cb({ id, result: '', error: 'Request timeout', event: undefined as any });
+        }
+      }, getTimeout());
+      this.requestTimers.set(id, timer);
+    };
+
+    startTimer();
+
     return new Promise<NDKRpcResponse>(() => {
       const responseHandler = (response: NDKRpcResponse) => {
         if (response.result === 'auth_url') {
           this.once(`response-${id}`, responseHandler);
           if (!authUrlSent) {
             authUrlSent = true;
+            authUrlReceived = true;
             this.emit('authUrl', response.error);
+            // auth_url を受け取ったらタイマーを延長
+            startTimer();
           }
         } else if (cb) {
           if (this.requests.has(id)) {
-            this.requests.delete(id);
+            cleanup();
             console.log('nostr-login processed nip46 request in', Date.now() - now, 'ms');
             cb(response);
           }
@@ -264,7 +354,7 @@ export class IframeNostrRpc extends NostrRpc {
         if (!verifySignature(event)) throw new Error('Invalid event signature from iframe');
         const nevent = new NDKEvent(this._ndk, event);
         const parsedEvent = await this.parseEvent(nevent);
-        
+
         if (!(parsedEvent as NDKRpcRequest).method) {
           console.log('parsed response', parsedEvent);
           this.emit(`response-${parsedEvent.id}`, parsedEvent);
@@ -352,7 +442,7 @@ export class Nip46Signer extends NDKNip46Signer {
   }
 
   private async setSignerPubkey(signerPubkey: string, sameAsUser: boolean = false) {
-    console.log("setSignerPubkey", signerPubkey);
+    console.log('setSignerPubkey', signerPubkey);
 
     this.remotePubkey = signerPubkey;
 
@@ -376,7 +466,7 @@ export class Nip46Signer extends NDKNip46Signer {
     }
 
     console.log('Requesting user pubkey from signer:', this.remotePubkey);
-    
+
     this._userPubkey = await new Promise<string>((ok, err) => {
       if (!this.remotePubkey) throw new Error('Signer pubkey not set');
 
@@ -384,10 +474,10 @@ export class Nip46Signer extends NDKNip46Signer {
         err(new Error('Timeout getting user pubkey'));
       }, 30000);
 
-      console.log("get_public_key", this.remotePubkey);
+      console.log('get_public_key', this.remotePubkey);
       this._rpc.sendRequest(this.remotePubkey, 'get_public_key', [], 24133, (response: NDKRpcResponse) => {
         clearTimeout(timeout);
-        
+
         if (response.error) {
           err(new Error(response.error));
         } else {
@@ -415,19 +505,14 @@ export class Nip46Signer extends NDKNip46Signer {
   }
 
   public async createAccount2({ bunkerPubkey, name, domain, perms = '' }: { bunkerPubkey: string; name: string; domain: string; perms?: string }) {
-    const params = [
-      name,
-      domain,
-      '',
-      perms,
-    ];
+    const params = [name, domain, '', perms];
 
     const r = await new Promise<NDKRpcResponse>((ok, err) => {
       const timeout = setTimeout(() => {
         err(new Error('Timeout creating account'));
       }, 60000);
 
-      this.rpc.sendRequest(bunkerPubkey, 'create_account', params, undefined, (response) => {
+      this.rpc.sendRequest(bunkerPubkey, 'create_account', params, undefined, response => {
         clearTimeout(timeout);
         ok(response);
       });

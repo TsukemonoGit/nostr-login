@@ -5,6 +5,23 @@ import { EventEmitter } from 'tseep';
 import { ConnectionString, Info, RecentType } from '@konemono/nostr-login-components/dist/types/types';
 import { nip19 } from 'nostr-tools';
 import { setDarkMode } from '..';
+import { DEFAULT_NIP46_RELAYS } from '../const';
+
+// Load custom relays from localStorage (synced with component store)
+function loadCustomNip46Relays(): string[] {
+  try {
+    const saved = localStorage.getItem('customNip46Relays');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch (e) {
+    console.error('Failed to load custom relays from localStorage', e);
+  }
+  return [...DEFAULT_NIP46_RELAYS];
+}
 
 class ModalManager extends EventEmitter {
   private modal: TypeModal | null = null;
@@ -15,7 +32,7 @@ class ModalManager extends EventEmitter {
   private accounts: Info[] = [];
   private recents: RecentType[] = [];
   private opt?: NostrLoginOptions;
-  private customNip46Relays: string[] = ['wss://relay.nsec.app/', 'wss://ephemeral.snowflare.cc/'];
+  private customNip46Relays: string[] = loadCustomNip46Relays();
 
   constructor(params: NostrParams, authNostrService: AuthNostrService, extensionManager: NostrExtensionService) {
     super();
@@ -40,6 +57,9 @@ class ModalManager extends EventEmitter {
 
     // hmm?!
     if (this.authNostrService.isAuthing()) this.authNostrService.resetAuth();
+
+    // Reload custom relays from localStorage to sync with component store
+    this.customNip46Relays = loadCustomNip46Relays();
 
     this.opt = opt;
 

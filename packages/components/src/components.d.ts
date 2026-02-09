@@ -542,7 +542,6 @@ declare global {
     interface HTMLNlSigninBunkerUrlElementEventMap {
         "nlLogin": string;
         "nlCheckLogin": string;
-        "nlRelaysChanged": string[];
     }
     interface HTMLNlSigninBunkerUrlElement extends Components.NlSigninBunkerUrl, HTMLStencilElement {
         addEventListener<K extends keyof HTMLNlSigninBunkerUrlElementEventMap>(type: K, listener: (this: HTMLNlSigninBunkerUrlElement, ev: NlSigninBunkerUrlCustomEvent<HTMLNlSigninBunkerUrlElementEventMap[K]>) => any, options?: boolean | AddEventListenerOptions): void;
@@ -845,7 +844,6 @@ declare namespace LocalJSX {
         "description"?: string;
         "onNlCheckLogin"?: (event: NlSigninBunkerUrlCustomEvent<string>) => void;
         "onNlLogin"?: (event: NlSigninBunkerUrlCustomEvent<string>) => void;
-        "onNlRelaysChanged"?: (event: NlSigninBunkerUrlCustomEvent<string[]>) => void;
         "titleLogin"?: string;
     }
     interface NlSigninConnectionString {

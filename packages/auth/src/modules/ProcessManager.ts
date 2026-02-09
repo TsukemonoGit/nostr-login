@@ -1,5 +1,5 @@
 import { EventEmitter } from 'tseep';
-import { CALL_TIMEOUT } from '../const';
+import { CALL_TIMEOUT, AUTH_URL_CALL_TIMEOUT } from '../const';
 
 class ProcessManager extends EventEmitter {
   private callCount: number = 0;
@@ -26,8 +26,10 @@ class ProcessManager extends EventEmitter {
   }
 
   public onAuthUrl() {
-    if (Boolean(this.callTimer)) {
+    // auth_urlが来たらユーザーが操作するのでタイムアウトを延長
+    if (this.callTimer) {
       clearTimeout(this.callTimer);
+      this.callTimer = setTimeout(() => this.emit('onCallTimeout'), AUTH_URL_CALL_TIMEOUT);
     }
   }
 

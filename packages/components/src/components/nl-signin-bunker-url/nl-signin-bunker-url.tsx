@@ -16,7 +16,6 @@ export class NlSigninBunkerUrl {
 
   @Event() nlLogin: EventEmitter<string>;
   @Event() nlCheckLogin: EventEmitter<string>;
-  @Event() nlRelaysChanged: EventEmitter<string[]>;
 
   private videoEl: HTMLVideoElement | null = null;
   private stream: MediaStream | null = null;
@@ -188,14 +187,6 @@ export class NlSigninBunkerUrl {
           <div class="ps-4 pe-4 overflow-y-auto">
             <p class="nl-error font-light text-center text-sm max-w-96 mx-auto">{state.error}</p>
           </div>
-
-          <nl-nip46-relay-settings
-            defaultRelays={state.customNip46Relays}
-            onNlRelaysChanged={e => {
-              state.customNip46Relays = e.detail;
-              this.nlRelaysChanged.emit(e.detail);
-            }}
-          />
 
           <button-base titleBtn="Connect" disabled={state.isLoading} onClick={e => this.handleLogin(e)}>
             {state.isLoading ? (

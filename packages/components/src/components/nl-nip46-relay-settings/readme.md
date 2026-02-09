@@ -24,13 +24,11 @@
 ### Used by
 
  - [nl-connect](../nl-connect)
- - [nl-signin-bunker-url](../nl-signin-bunker-url)
 
 ### Graph
 ```mermaid
 graph TD;
   nl-connect --> nl-nip46-relay-settings
-  nl-signin-bunker-url --> nl-nip46-relay-settings
   style nl-nip46-relay-settings fill:#f9f,stroke:#333,stroke-width:4px
 ```
 

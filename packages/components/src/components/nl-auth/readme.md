@@ -98,7 +98,6 @@ graph TD;
   nl-otp-migrate --> nl-select
   nl-otp-migrate --> button-base
   nl-signin-read-only --> button-base
-  nl-signin-bunker-url --> nl-nip46-relay-settings
   nl-signin-bunker-url --> button-base
   nl-welcome-signin --> button-base
   nl-welcome-signup --> button-base

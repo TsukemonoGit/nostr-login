@@ -9,7 +9,7 @@ import { NostrParams } from './';
 import { EventEmitter } from 'tseep';
 import { Signer } from './Nostr';
 import { Nip44 } from '../utils/nip44';
-import { IframeNostrRpc, Nip46Signer, ReadyListener } from './Nip46';
+import { IframeNostrRpc, Nip46Signer, Nip46Error, ReadyListener } from './Nip46';
 import { PrivateKeySigner } from './Signer';
 import { DEFAULT_NIP46_RELAYS } from '../const';
 
@@ -343,8 +343,14 @@ class AuthNostrService extends EventEmitter implements Signer {
 
   private releaseSigner() {
     console.log('releaseSigner called');
-    // RPC subscriptionを停止
+    // RPC pending requestsをクリア
     if (this.signer && this.signer.rpc) {
+      try {
+        (this.signer.rpc as any).clearPendingRequests?.();
+      } catch (e) {
+        console.warn('Failed to clear pending requests', e);
+      }
+      // RPC subscriptionを停止
       try {
         (this.signer.rpc as any).stop?.();
       } catch (e) {
@@ -671,29 +677,158 @@ class AuthNostrService extends EventEmitter implements Signer {
   }
 
   public async signEvent(event: any) {
-    // リレー接続を確認して切れていたら再接続
-    await this.ensureRelayConnection();
-
     if (this.localSigner) {
       event.pubkey = getPublicKey(this.localSigner.privateKey!);
       event.id = getEventHash(event);
       event.sig = await this.localSigner.sign(event);
-    } else {
-      event.pubkey = this.signer?.remotePubkey;
-      event.id = getEventHash(event);
-      event.sig = await this.signer?.sign(event);
+      console.log('signed (local)', { event });
+      return event;
     }
-    console.log('signed', { event });
-    return event;
+
+    // NIP-46 署名: リトライ付き
+    const maxRetries = 2;
+    let lastError: any;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        await this.ensureRelayConnection();
+        event.pubkey = this.signer?.remotePubkey;
+        event.id = getEventHash(event);
+        event.sig = await this.signer?.sign(event);
+        console.log('signed', { event, attempt });
+        return event;
+      } catch (e) {
+        lastError = e;
+
+        // signer拒否（ユーザーが明示的にdenyした）の場合はリトライしない
+        const isSignerRejected = e instanceof Nip46Error && e.code === 'SIGNER_REJECTED';
+        // ユーザーキャンセルもリトライしない
+        const isCancelled = e instanceof Error && (e.message === 'Cancelled by user' || e.message === 'cancelled');
+
+        if (attempt < maxRetries && !isSignerRejected && !isCancelled) {
+          console.warn(`signEvent attempt ${attempt + 1}/${maxRetries + 1} failed, retrying...`, e);
+          // 強制再接続
+          try {
+            await this.forceReconnect();
+          } catch (reconnectErr) {
+            console.warn('forceReconnect failed during retry, will try sign anyway', reconnectErr);
+          }
+          continue;
+        }
+        break;
+      }
+    }
+    throw lastError;
+  }
+
+  /**
+   * 強制的にリレーに再接続し、subscriptionを再開する。
+   * 全リレーを一旦切断してからクリーンに再接続する。
+   */
+  private async forceReconnect() {
+    console.log('forceReconnect: forcing clean relay reconnection...');
+
+    // 全リレーを明示的に切断して古い状態をリセット
+    this.disconnectAllRelays();
+    this.ensureRelaysInPool();
+
+    try {
+      await this.ndk.connect();
+    } catch (e) {
+      console.warn('forceReconnect: ndk.connect() threw, will poll for connection...', e);
+    }
+
+    await this.waitForAtLeastOneRelay(8000);
+    await this.ensureSubscription();
   }
 
   private async ensureRelayConnection() {
-    // リレーに接続されているか確認
-    const connected = Array.from(this.ndk.pool.relays.values()).some(relay => relay.status === 1); // 1 = CONNECTED
+    this.ensureRelaysInPool();
 
-    if (!connected) {
-      console.log('Relay disconnected, reconnecting...');
-      await this.ndk.connect();
+    const isRelayConnected = this.isAnyRelayConnected();
+    const isSubActive = this.signer?.rpc ? (this.signer.rpc as any).isSubscriptionActive?.() !== false : true;
+
+    if (!isRelayConnected) {
+      // リレーが切断されている場合：一旦全リレーを切断してクリーンな状態で再接続
+      console.log('ensureRelayConnection: relay disconnected, forcing clean reconnect...');
+      this.disconnectAllRelays();
+      this.ensureRelaysInPool();
+
+      try {
+        await this.ndk.connect();
+      } catch (e) {
+        console.warn('ensureRelayConnection: ndk.connect() threw, will poll for connection...', e);
+      }
+
+      // 少なくとも1つのリレーがOPENになるまで待つ
+      await this.waitForAtLeastOneRelay(8000);
+
+      // 再接続後はsubscriptionも必ず再開
+      await this.ensureSubscription();
+    } else if (!isSubActive) {
+      // リレーは接続されているがsubscriptionが死んでいる場合
+      console.log('ensureRelayConnection: relay connected but subscription dead, resubscribing...');
+      await this.ensureSubscription();
+    }
+  }
+
+  private isAnyRelayConnected(): boolean {
+    return Array.from(this.ndk.pool.relays.values()).some(relay => relay.status === 1);
+  }
+
+  /**
+   * リレープールが空なら保存済みリレーまたはデフォルトリレーを追加する
+   */
+  private ensureRelaysInPool() {
+    if (this.ndk.pool.relays.size === 0) {
+      console.warn('ensureRelaysInPool: no relays in pool, adding relays');
+      const relays = this.params.userInfo?.relays?.length ? this.params.userInfo.relays : DEFAULT_NIP46_RELAYS;
+      for (const r of relays) {
+        this.ndk.addExplicitRelay(r, undefined);
+      }
+    }
+  }
+
+  /**
+   * すべてのリレーを明示的に切断する。
+   * 古いWebSocket状態をクリーンアップするために使う。
+   */
+  private disconnectAllRelays() {
+    for (const relay of this.ndk.pool.relays.values()) {
+      try {
+        relay.disconnect();
+      } catch (e) {
+        // ignore
+      }
+    }
+  }
+
+  /**
+   * subscriptionを再開する
+   */
+  private async ensureSubscription() {
+    if (this.signer && this.signer.rpc) {
+      try {
+        await (this.signer.rpc as any).resubscribe?.();
+        console.log('ensureSubscription: subscription re-established');
+      } catch (e) {
+        console.warn('ensureSubscription: failed to resubscribe', e);
+      }
+    }
+  }
+
+  /**
+   * 少なくとも1つのリレーが接続状態になるまで待つ。
+   * タイムアウトした場合はNip46Errorを投げる。
+   */
+  private async waitForAtLeastOneRelay(timeoutMs: number): Promise<void> {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      if (this.isAnyRelayConnected()) return;
+      await new Promise(r => setTimeout(r, 300));
+    }
+    if (!this.isAnyRelayConnected()) {
+      throw new Nip46Error('Failed to connect to any relay', 'RELAY_DISCONNECTED');
     }
   }
 
@@ -703,7 +838,12 @@ class AuthNostrService extends EventEmitter implements Signer {
         if (!response.error) {
           resolve(response.result);
         } else {
-          reject(response.error);
+          // タイムアウトエラーの場合はNip46Errorでラップ
+          if (response.error.includes('timeout') || response.error === 'Request timeout') {
+            reject(new Nip46Error(response.error, 'TIMEOUT'));
+          } else {
+            reject(new Nip46Error(response.error, 'SIGNER_REJECTED'));
+          }
         }
       });
     });
