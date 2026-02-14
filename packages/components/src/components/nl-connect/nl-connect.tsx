@@ -90,8 +90,8 @@ export class NlConnect {
                         <div class="overflow-hidden flex flex-col w-full">
                           <div class="nl-title truncate overflow-hidden">
                             {el.name}
-                            {isLoading && <span class="nl-description text-xs ml-2">確認中...</span>}
-                            {isUnavailable && <span class="nl-description text-xs ml-2">オフライン</span>}
+                            {isLoading && <span class="nl-description text-xs ml-2">checking...</span>}
+                            {isUnavailable && <span class="nl-description text-xs ml-2">offline</span>}
                           </div>
                         </div>
                       </a>
