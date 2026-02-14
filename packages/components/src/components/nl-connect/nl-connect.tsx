@@ -54,18 +54,28 @@ export class NlConnect {
               <p class="nl-description font-medium text-sm pb-1.5">Select key store:</p>
               <ul class="p-2 rounded-lg border border-gray-200 flex flex-col w-full gap-0.5">
                 {this.connectionStringServices.map(el => {
+                  const isLoading = el.available === 'loading';
+                  const isUnavailable = el.available === false;
+                  const isDisabled = isLoading || isUnavailable;
+
                   return (
-                    <li>
+                    <li class={isDisabled ? 'opacity-50 pointer-events-none' : ''}>
                       <a
-                        href={el.link}
+                        href={isDisabled ? undefined : el.link}
                         target="_blank"
-                        onClick={e => this.handleOpenLink(e, el)}
-                        class="flex items-center gap-x-3.5 w-full hover:bg-gray-300 flex cursor-pointer items-center gap-x-3.5 py-2 px-3 rounded-lg text-sm justify-between"
+                        onClick={e => {
+                          if (isDisabled) {
+                            e.preventDefault();
+                            return;
+                          }
+                          this.handleOpenLink(e, el);
+                        }}
+                        class={`flex items-center gap-x-3.5 w-full py-2 px-3 rounded-lg text-sm justify-between ${isDisabled ? 'cursor-default' : 'hover:bg-gray-300 cursor-pointer'}`}
                       >
                         <div class="w-full max-w-7 h-7 flex relative">
                           <div class="uppercase font-bold w-full h-full rounded-full border border-gray-400 flex justify-center items-center">
                             {Boolean(el.img) ? (
-                              <img class="w-full rounded-full" src={el.img} alt={el.name} />
+                              <img class={`w-full rounded-full ${isUnavailable ? 'grayscale' : ''}`} src={el.img} alt={el.name} />
                             ) : (
                               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="#9ca3af" class="w-4 h-4 block">
                                 <path
@@ -78,7 +88,11 @@ export class NlConnect {
                           </div>
                         </div>
                         <div class="overflow-hidden flex flex-col w-full">
-                          <div class="nl-title truncate overflow-hidden">{el.name}</div>
+                          <div class="nl-title truncate overflow-hidden">
+                            {el.name}
+                            {isLoading && <span class="nl-description text-xs ml-2">確認中...</span>}
+                            {isUnavailable && <span class="nl-description text-xs ml-2">オフライン</span>}
+                          </div>
                         </div>
                       </a>
                     </li>

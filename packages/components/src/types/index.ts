@@ -80,6 +80,7 @@ export interface ConnectionString {
   domain?: string;
   canImport?: boolean;
   iframeUrl?: string;
+  available?: boolean | 'loading'; // true=online, false=offline/greyed out, 'loading'=checking
 }
 
 export type BannerNotifyMode = '' | 'timeout' | 'authUrl' | 'iframeAuthUrl' | 'rebind';

@@ -112,10 +112,27 @@ class ModalManager extends EventEmitter {
     this.modal.isLoadingExtension = false;
     this.modal.isLoading = false;
 
-    [this.modal.connectionString, this.modal.connectionStringServices] = await this.authNostrService.getNostrConnectServices(this.customNip46Relays);
-
+    // Show dialog immediately, then load connection services in background
     dialog.appendChild(this.modal);
     document.body.appendChild(dialog);
+
+    // Fetch nostr connect services async - UI is already visible
+    // onUpdate callback pushes incremental updates as each service's availability is resolved
+    this.authNostrService
+      .getNostrConnectServices(this.customNip46Relays, apps => {
+        if (this.modal) {
+          this.modal.connectionStringServices = apps;
+        }
+      })
+      .then(([connectionString, connectionStringServices]) => {
+        if (this.modal) {
+          this.modal.connectionString = connectionString;
+          this.modal.connectionStringServices = connectionStringServices;
+        }
+      })
+      .catch(e => {
+        console.log('Failed to load nostr connect services', e);
+      });
 
     let otpPubkey = '';
 
@@ -358,7 +375,15 @@ class ModalManager extends EventEmitter {
         console.log('Custom Nip46 relays updated:', this.customNip46Relays);
         // Regenerate connection services with new relays
         if (this.modal) {
-          [this.modal.connectionString, this.modal.connectionStringServices] = await this.authNostrService.getNostrConnectServices(this.customNip46Relays);
+          const modal = this.modal;
+          await this.authNostrService
+            .getNostrConnectServices(this.customNip46Relays, apps => {
+              modal.connectionStringServices = apps;
+            })
+            .then(([connectionString, connectionStringServices]) => {
+              modal.connectionString = connectionString;
+              modal.connectionStringServices = connectionStringServices;
+            });
         }
       });
 

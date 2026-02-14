@@ -35,6 +35,20 @@ const NOSTRCONNECT_APPS: ConnectionString[] = [
   },
 ];
 
+// Cache for nostr.json results per domain
+const nostrJsonCache: Map<string, { data: any; timestamp: number }> = new Map();
+const NOSTR_JSON_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+async function fetchNostrJson(domain: string): Promise<any> {
+  const cached = nostrJsonCache.get(domain);
+  if (cached && Date.now() - cached.timestamp < NOSTR_JSON_CACHE_TTL) {
+    return cached.data;
+  }
+  const info = await (await fetch(`https://${domain}/.well-known/nostr.json`)).json();
+  nostrJsonCache.set(domain, { data: info, timestamp: Date.now() });
+  return info;
+}
+
 class AuthNostrService extends EventEmitter implements Signer {
   private ndk: NDK;
   private profileNdk: NDK;
@@ -223,35 +237,56 @@ class AuthNostrService extends EventEmitter implements Signer {
     return `nostrconnect://${pubkey}?image=${meta.icon}&url=${meta.url}&name=${meta.name}&perms=${meta.perms}&secret=${this.nostrConnectSecret}`;
   }
 
-  public async getNostrConnectServices(customRelays?: string[]): Promise<[string, ConnectionString[]]> {
+  public async getNostrConnectServices(customRelays?: string[], onUpdate?: (apps: ConnectionString[]) => void): Promise<[string, ConnectionString[]]> {
     const nostrconnect = await this.createNostrConnect();
 
-    const apps = NOSTRCONNECT_APPS.map(a => ({ ...a }));
+    const apps: ConnectionString[] = NOSTRCONNECT_APPS.map(a => ({ ...a }));
+    const defaultRelays = customRelays && customRelays.length > 0 ? customRelays : DEFAULT_NIP46_RELAYS;
 
+    // Build initial list: https services are 'loading', others are immediately available
     for (const a of apps) {
-      let relays = customRelays && customRelays.length > 0 ? customRelays : DEFAULT_NIP46_RELAYS;
       if (a.link.startsWith('https://')) {
-        let domain = a.domain || new URL(a.link).hostname;
+        a.available = 'loading';
+        // Set link with default relays for now
+        const relayParams = defaultRelays.map(r => `&relay=${encodeURIComponent(r)}`).join('');
+        a.link = nostrconnect + relayParams;
+      } else {
+        a.available = true;
+        const relayParams = defaultRelays.map(r => `&relay=${encodeURIComponent(r)}`).join('');
+        const nc = nostrconnect + relayParams;
+        a.link = a.link.replace('<nostrconnect>', nc);
+      }
+    }
+
+    // Notify caller with initial state (services visible immediately)
+    if (onUpdate) onUpdate([...apps.map(a => ({ ...a }))]);
+
+    // Fetch nostr.json for each service that needs it, update individually
+    const fetchPromises = apps
+      .filter(a => a.available === 'loading')
+      .map(async a => {
+        const domain = a.domain || '';
         try {
-          const info = await (await fetch(`https://${domain}/.well-known/nostr.json`)).json();
+          const info = await fetchNostrJson(domain);
           const pubkey = info.names['_'];
+          let relays = defaultRelays;
           const fetchedRelays = info.nip46[pubkey] as string[];
           if (fetchedRelays && fetchedRelays.length && (!customRelays || customRelays.length === 0)) {
             relays = fetchedRelays;
           }
           a.iframeUrl = info.nip46.iframe_url || '';
+          const relayParams = relays.map(r => `&relay=${encodeURIComponent(r)}`).join('');
+          const nc = nostrconnect + relayParams;
+          a.link = a.iframeUrl ? nc : a.link;
+          a.available = true;
         } catch (e) {
-          console.log('Bad app info', e, a);
+          console.log('Service unavailable', domain, e);
+          a.available = false;
         }
-      }
-      const relayParams = relays.map(r => `&relay=${encodeURIComponent(r)}`).join('');
-      const nc = nostrconnect + relayParams;
-      if (a.iframeUrl) {
-        a.link = nc;
-      } else {
-        a.link = a.link.replace('<nostrconnect>', nc);
-      }
-    }
+        if (onUpdate) onUpdate([...apps.map(x => ({ ...x }))]);
+      });
+
+    await Promise.all(fetchPromises);
 
     return [nostrconnect, apps];
   }
