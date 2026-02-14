@@ -586,8 +586,12 @@ class ModalManager extends EventEmitter {
           this.modal.isLoading = false;
         }
 
-        // キャンセル処理を呼び出す
-        this.authNostrService.cancelSignerInit();
+        // 認証フローが進行中の場合のみsignerをキャンセルする。
+        // ログイン済みの状態でダイアログを開いて閉じただけの場合は
+        // 既存のsignerを破壊してはいけない。
+        if (this.authNostrService.isAuthing()) {
+          this.authNostrService.cancelSignerInit();
+        }
 
         dialog.close();
         err(new Error('Cancelled'));
