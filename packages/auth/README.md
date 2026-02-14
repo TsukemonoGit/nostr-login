@@ -1,21 +1,35 @@
-Nostr-Login
-===========
+# @konemono/nostr-login
 
-This library is a powerful `window.nostr` provider.
+> **This is an extended fork of [nostr-protocol/nostr-login](https://github.com/nostr-protocol/nostr-login).**
+> Published as `@konemono/nostr-login` on npm.
 
+This library is a powerful `window.nostr` provider with NIP-46 (Nostr Connect) support, browser extension login, read-only login, account switching, OAuth-like sign up, and more.
+
+### Fork Enhancements
+
+- **Multiple NIP-46 relay support** — Add/remove/reset relays from the UI
+- **QR code scanning** — Scan `bunker://` or `nostrconnect://` QR codes with camera
+- **NIP-46 signing retry** — Auto-retry (up to 3 times) with forced reconnection on relay disconnect/timeout
+- **Improved subscription recovery** — Resubscribe without EOSE hang after relay reconnection
+- **Offline resilience** — Signer preserved on timeout; resumes on reconnection
+- **Dialog close safety** — Closing the login dialog while already authenticated no longer destroys the signer
+- **Stability fixes** — Infinite loading resolution, timeout management, cancel support
+
+## Install
+
+```bash
+npm install @konemono/nostr-login
 ```
-<script src='https://www.unpkg.com/nostr-login@latest/dist/unpkg.js'></script>
-```
 
-Just add the above script to your HTML and 
-get a nice UI for users to login with Nostr Connect (nip46), with an extension, read-only login,
-account switching, OAuth-like sign up, etc. Your app just talks to the `window.nostr`, the rest is handled by `nostr-login`.
-
-See it in action on [nostr.band](https://nostr.band).
+| Package                            | npm                                                                                                                                     |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `@konemono/nostr-login`            | [![npm](https://img.shields.io/npm/v/@konemono/nostr-login)](https://www.npmjs.com/package/@konemono/nostr-login)                       |
+| `@konemono/nostr-login-components` | [![npm](https://img.shields.io/npm/v/@konemono/nostr-login-components)](https://www.npmjs.com/package/@konemono/nostr-login-components) |
 
 ## Options
 
 You can set these attributes to the `script` tag to customize the behavior:
+
 - `data-dark-mode` - `true`/`false`, default will use the browser's color theme
 - `data-bunkers` - the comma-separated list of domain names of Nostr Connect (nip46) providers for sign up, i.e. `nsec.app,highlighter.com`
 - `data-perms` - the comma-separated list of [permissions](https://github.com/nostr-protocol/nips/blob/master/46.md#requested-permissions) requested by the app over Nostr Connect, i.e. `sign_event:1,nip04_encrypt`
@@ -26,13 +40,14 @@ You can set these attributes to the `script` tag to customize the behavior:
 - `data-otp-reply-url` - URL for replying with OTP code
 - `data-title` - title for the welcome screen
 - `data-description` - description for the welcome screen
-- `data-start-screen` - screen shown by default (banner click, window.nostr.* call), options: `welcome`, `welcome-login`, `welcome-signup`, `signup`, `local-signup`, `login`, `otp`, `connect`, `login-bunker-url`, `login-read-only`, `connection-string`, `switch-account`, `import`
+- `data-start-screen` - screen shown by default (banner click, window.nostr.\* call), options: `welcome`, `welcome-login`, `welcome-signup`, `signup`, `local-signup`, `login`, `otp`, `connect`, `login-bunker-url`, `login-read-only`, `connection-string`, `switch-account`, `import`
 - `data-signup-relays` - comma-separated list of relays where nip65 event will be published on local signup
 - `data-outbox-relays` - comma-separated list of relays that will be added to nip65 event on local signup
 - `data-signup-nstart` - "true" to use start.njump.me instead of local signup
 - `data-follow-npubs` - comma-separated list of npubs to follow if njump.me signup is used
 
 Example:
+
 ```
 <script src='https://www.unpkg.com/nostr-login@latest/dist/unpkg.js' data-perms="sign_event:1,sign_event:0" data-theme="ocean"></script>
 ```
@@ -48,7 +63,7 @@ document.addEventListener('nlAuth', (e) => {
   if (e.detail.type === 'login' || e.detail.type === 'signup') {
     onLogin();  // get pubkey with window.nostr and show user profile
   } else {
-    onLogout()  // clear local user data, hide profile info 
+    onLogout()  // clear local user data, hide profile info
   }
 })
 ```
@@ -78,15 +93,14 @@ document.dispatchEvent(new CustomEvent("nlDarkMode", { detail: true }));
 
 ## Use as a package
 
-Install `nostr-login` package with `npm` and then:
-
-```
-import { init as initNostrLogin } from "nostr-login"
+```javascript
+import { init as initNostrLogin } from '@konemono/nostr-login';
 
 // make sure this is called before any
 // window.nostr calls are made
-initNostrLogin({/*options*/})
-
+initNostrLogin({
+  /*options*/
+});
 ```
 
 Now the `window.nostr` will be initialized and on your first call
@@ -94,74 +108,131 @@ to it the auth flow will be launched if user isn't authed yet.
 
 You can also launch the auth flow yourself:
 
-```
-import { launch as launchNostrLoginDialog } from "nostr-login"
+```javascript
+import { launch as launchNostrLoginDialog } from '@konemono/nostr-login';
 
-// make sure init() was called 
+// make sure init() was called
 
 // on your signup button click
 function onSignupClick() {
   // launch signup screen
   launchNostrLoginDialog({
-    startScreen: 'signup'
-  })
+    startScreen: 'signup',
+  });
 }
 ```
 
 ### Next.js Fix for Server Side Rendering (SSR)
 
-`nostr-login` calls `document` which is unavailable for server-side rendering. You will have build errors. To fix this, you can import `nostr-login` on the client side in your component with a `useEffect` like this:
+`nostr-login` calls `document` which is unavailable for server-side rendering. Import it dynamically inside `useEffect`:
 
 ```javascript
-  useEffect(() => {
-    import('nostr-login')
-      .then(async ({ init }) => {
-        init({
-          // options
-        })
-      })
-      .catch((error) => console.log('Failed to load nostr-login', error));
-  }, []);
+useEffect(() => {
+  import('@konemono/nostr-login')
+    .then(async ({ init }) => {
+      init({
+        // options
+      });
+    })
+    .catch(error => console.log('Failed to load nostr-login', error));
+}, []);
 ```
-Note: even if your component has `"use client"` in the first line, this fix still may be necessary.
+
+> Even if your component has `"use client"`, this fix may still be necessary.
 
 ---
 
-API:
-- `init(opts)` - set mapping of window.nostr to nostr-login
-- `launch(startScreen)` - launch nostr-login UI
-- `logout()` - drop the current nip46 connection 
+## API
 
-Options:
-- `theme` - same as `data-theme` above
-- `startScreen` - same as `startScreen` for `nlLaunch` event above
-- `bunkers` - same as `data-bunkers` above
-- `devOverrideBunkerOrigin` - for testing, overrides the bunker origin for local setup
-- `onAuth: (npub: string, options: NostrLoginAuthOptions)` - a callback to provide instead of listening to `nlAuth` event
-- `perms` - same as `data-perms` above
-- `darkMode` - same as `data-dark-mode` above
-- `noBanner` - same as `data-no-banner` above
-- `isSignInWithExtension` - `true` to bring the *Sign in with exception* button into main list of options, `false` to hide to the *Advanced*, default will behave as `true` if extension is detected.
+| Function                | Description                                    |
+| ----------------------- | ---------------------------------------------- |
+| `init(opts)`            | Map `window.nostr` to nostr-login              |
+| `launch(opts)`          | Launch nostr-login UI                          |
+| `logout()`              | Drop the current NIP-46 connection and log out |
+| `setDarkMode(dark)`     | Toggle dark mode                               |
+| `setAuth(method, info)` | Programmatic login/logout                      |
+| `cancelNeedAuth()`      | Cancel Nostr Connect flow                      |
 
-## OTP login
+## Options
 
-If you supply both `data-otp-request-url` and `data-otp-reply-url` then "Login with DM" button will appear on the welcome screen. 
+Options can be passed to `init()` or set as `data-*` attributes on the script tag.
 
-When user enters their nip05 or npub, a GET request is made to `<data-otp-request-url>[?&]pubkey=<user-pubkey>`. Server should send
-a DM with one-time code to that pubkey and should return 200.
+| `init()` option           | `data-*` attribute          | Description                                                                                                                                        |
+| ------------------------- | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `darkMode`                | `data-dark-mode`            | `true`/`false`. Defaults to browser color theme                                                                                                    |
+| `theme`                   | `data-theme`                | Color theme: `default`, `ocean`, `lemonade`, `purple`                                                                                              |
+| `bunkers`                 | `data-bunkers`              | Comma-separated NIP-46 provider domains, e.g. `nsec.app,highlighter.com`                                                                           |
+| `perms`                   | `data-perms`                | [Permissions](https://github.com/nostr-protocol/nips/blob/master/46.md#requested-permissions) (comma-separated), e.g. `sign_event:1,nip04_encrypt` |
+| `startScreen`             | `data-start-screen`         | Initial screen (see below)                                                                                                                         |
+| `noBanner`                | `data-no-banner`            | `true` to hide the banner (use event dispatch to launch manually)                                                                                  |
+| `methods`                 | `data-methods`              | Allowed auth methods (comma-separated): `connect`, `extension`, `readOnly`, `local`                                                                |
+| `title`                   | `data-title`                | Welcome screen title                                                                                                                               |
+| `description`             | `data-description`          | Welcome screen description                                                                                                                         |
+| `otpRequestUrl`           | `data-otp-request-url`      | URL for OTP code request                                                                                                                           |
+| `otpReplyUrl`             | `data-otp-reply-url`        | URL for OTP code reply                                                                                                                             |
+| `signupRelays`            | `data-signup-relays`        | Relays for publishing nip65 on local signup (comma-separated)                                                                                      |
+| `outboxRelays`            | `data-outbox-relays`        | Relays added to nip65 event on local signup (comma-separated)                                                                                      |
+| `signupNstart`            | `data-signup-nstart`        | `true` to use start.njump.me for signup                                                                                                            |
+| `followNpubs`             | `data-follow-npubs`         | npubs to follow on njump.me signup (comma-separated)                                                                                               |
+| `devOverrideBunkerOrigin` | —                           | Testing only: override bunker origin                                                                                                               |
+| `dev`                     | `data-dev`                  | Development mode                                                                                                                                   |
+| `onAuth`                  | —                           | Callback `(npub, options) => void` instead of `nlAuth` event                                                                                       |
+| `customNostrConnect`      | `data-custom-nostr-connect` | `true` to fire `nlNeedAuth` event instead of showing modal                                                                                         |
 
-After user enters the code, a GET request is made to `<data-otp-reply-url>[?&]pubkey=<user-pubkey>&code=<code>`. Server should check that code matches the pubkey and hasn't expired, and should return 200 status and an optional payload. Nostr-login will deliver the payload as `otpData` field in `nlAuth` event, and will save the payload in localstore and will deliver it again as `nlAuth` on page reload.
+### startScreen values
 
-The reply payload may be used to supply the session token. If token is sent by the server as a cookie then payload might be empty, otherwise the payload should be used by the app to extract the token and use it in future API calls to the server.
+`welcome` · `welcome-login` · `welcome-signup` · `signup` · `local-signup` · `login` · `otp` · `connect` · `login-bunker-url` · `login-read-only` · `connection-string` · `switch-account` · `import`
+
+## Updating the UI
+
+When a user performs an auth action, an `nlAuth` event is dispatched on `document`:
+
+```javascript
+document.addEventListener('nlAuth', e => {
+  if (e.detail.type === 'login' || e.detail.type === 'signup') {
+    onLogin(); // get pubkey with window.nostr and show user profile
+  } else {
+    onLogout(); // clear local user data, hide profile info
+  }
+});
+```
+
+## Event Dispatch
+
+Trigger modals, logout, and other actions programmatically:
+
+```javascript
+// Launch auth UI
+document.dispatchEvent(new CustomEvent('nlLaunch', { detail: 'welcome' }));
+
+// Logout
+document.dispatchEvent(new Event('nlLogout'));
+
+// Toggle dark mode
+document.dispatchEvent(new CustomEvent('nlDarkMode', { detail: true }));
+
+// Programmatic login/logout
+document.dispatchEvent(new CustomEvent('nlSetAuth', { detail: { method, info } }));
+
+// Cancel Nostr Connect flow
+document.dispatchEvent(new Event('nlNeedAuthCancel'));
+```
+
+The `detail` for `nlLaunch` can be: `welcome`, `signup`, `login`, `login-bunker-url`, `login-read-only`, `switch-account`.
+
+## OTP Login
+
+If you supply both `otpRequestUrl` and `otpReplyUrl`, a "Login with DM" button will appear on the welcome screen.
+
+1. User enters nip05 or npub → GET `<otpRequestUrl>?pubkey=<user-pubkey>`. Server sends DM with one-time code and returns 200.
+2. User enters code → GET `<otpReplyUrl>?pubkey=<user-pubkey>&code=<code>`. Server verifies and returns 200 + optional payload.
+
+The payload is delivered as `otpData` in `nlAuth` event, saved in localStorage, and re-delivered on page reload.
 
 ## Examples
 
-* [Basic HTML Example](./examples/usage.html)
+- [Basic HTML Example](../../examples/usage.html)
 
-## TODO
+## License
 
-- fetch bunker list using NIP-89
-- Amber support
-- allow use without the UIs
-- add timeout handling
-- more at [issues](https://github.com/nostrband/nostr-login/issues)
+MIT
