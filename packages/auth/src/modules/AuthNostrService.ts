@@ -865,12 +865,17 @@ class AuthNostrService extends EventEmitter implements Signer {
   }
 
   /**
-   * subscriptionを再開する
+   * subscriptionを再開する。
+   * タイムアウト付きで、ハングを防止する。
    */
   private async ensureSubscription() {
     if (this.signer && this.signer.rpc) {
       try {
-        await (this.signer.rpc as any).resubscribe?.();
+        const resubscribePromise = (this.signer.rpc as any).resubscribe?.();
+        if (resubscribePromise) {
+          const timeoutMs = 10000;
+          await Promise.race([resubscribePromise, new Promise<never>((_, reject) => setTimeout(() => reject(new Error('ensureSubscription timed out')), timeoutMs))]);
+        }
         console.log('ensureSubscription: subscription re-established');
       } catch (e) {
         console.warn('ensureSubscription: failed to resubscribe', e);

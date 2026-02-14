@@ -37,8 +37,31 @@ class NostrRpc extends NDKNostrRpc {
   public async subscribe(filter: NDKFilter): Promise<NDKSubscription> {
     filter.kinds = filter.kinds?.filter(k => k === 24133);
     this.lastSubscribeFilter = { ...filter };
-    this.sub = await super.subscribe(filter);
-    return this.sub;
+
+    // NDKNostrRpc.subscribe() はEOSE待ちのPromiseを返すが、
+    // リレーが不安定な状態ではEOSEが届かず無限にハングする。
+    // NIP-46ではリアルタイムのレスポンスのみ必要なので、
+    // EOSE待ちをスキップして直接subscribeする。
+    const sub = this._ndk.subscribe(filter, {
+      closeOnEose: false,
+      groupable: false,
+    });
+
+    sub.on('event', async (event: NDKEvent) => {
+      try {
+        const parsedEvent = await this.parseEvent(event);
+        if ((parsedEvent as NDKRpcRequest).method) {
+          this.emit('request', parsedEvent);
+        } else {
+          this.emit(`response-${parsedEvent.id}`, parsedEvent);
+        }
+      } catch (e) {
+        console.error('error parsing event in subscription', e);
+      }
+    });
+
+    this.sub = sub;
+    return sub;
   }
 
   public stop() {
