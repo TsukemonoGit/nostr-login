@@ -577,7 +577,10 @@ class AuthNostrService extends EventEmitter implements Signer {
 
   public async startAuth() {
     console.log('startAuth');
-    if (this.readyCallback) throw new Error('Already started');
+    if (this.readyCallback) {
+      console.log('startAuth: previous auth still active, cancelling it first');
+      this.cancelNostrConnect();
+    }
 
     this.readyPromise = new Promise<void>(ok => (this.readyCallback = ok));
   }
