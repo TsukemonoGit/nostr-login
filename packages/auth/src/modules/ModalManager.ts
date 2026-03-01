@@ -4,6 +4,7 @@ import { AuthNostrService, NostrExtensionService, NostrParams } from '.';
 import { EventEmitter } from 'tseep';
 import { ConnectionString, Info, RecentType } from '@konemono/nostr-login-components/dist/types/types';
 import { nip19 } from 'nostr-tools';
+import { bytesToHex } from '@noble/hashes/utils';
 import { setDarkMode } from '..';
 import { DEFAULT_NIP46_RELAYS } from '../const';
 
@@ -162,9 +163,13 @@ class ModalManager extends EventEmitter {
       const done = async (ok: () => void) => {
         if (this.modal) this.modal.isLoading = false;
         await this.authNostrService.endAuth();
+        // ok() を dialog.close() より先に呼ぶ。
+        // dialog.close() は同期的に 'close' イベントを発火し、
+        // そのハンドラが err(new Error('Closed')) を呼ぶため、
+        // ok() が後だと Promise が reject されてしまう。
+        ok();
         dialog.close();
         this.modal = null;
-        ok();
       };
 
       const exec = async (
@@ -324,7 +329,7 @@ class ModalManager extends EventEmitter {
                   throw new Error('Bad nsec value');
                 }
                 if (decoded.type !== 'nsec') throw new Error('Bad bech32 type');
-                await this.authNostrService.localSignup('', decoded.data);
+                await this.authNostrService.localSignup('', bytesToHex(decoded.data as Uint8Array));
                 ok();
               } else if (nsecOrBunker.startsWith('bunker:')) {
                 await this.authNostrService.authNip46('login', { name: '', bunkerUrl: nsecOrBunker });
@@ -397,16 +402,16 @@ class ModalManager extends EventEmitter {
 
       this.modal.addEventListener('nlLoginNsec', async (event: any) => {
         await exec(async () => {
-          const nsecValue = event.detail;
+          const nsecValue = event.detail as string;
           if (!nsecValue) throw new Error('Please enter your nsec');
-          let decoded;
+          let decoded: { type: string; data: any };
           try {
-            decoded = nip19.decode(nsecValue);
+            decoded = nip19.decode(nsecValue) as any;
           } catch (e) {
             throw new Error('Invalid nsec format');
           }
           if (decoded.type !== 'nsec') throw new Error('Invalid key type, expected nsec');
-          await this.authNostrService.localSignup('', decoded.data as string);
+          await this.authNostrService.localSignup('', bytesToHex(decoded.data));
         });
       });
 

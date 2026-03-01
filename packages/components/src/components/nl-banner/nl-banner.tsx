@@ -111,9 +111,6 @@ export class NlBanner {
     const isShowImg = Boolean(this.userInfo?.picture);
     const userName = this.userInfo?.name || this.userInfo?.nip05?.split('@')?.[0] || this.userInfo?.pubkey || '';
     const isShowUserName = Boolean(userName);
-    const isTemporary = this.userInfo && this.userInfo.authMethod === 'local';
-    const isBackupKey = localStorage.getItem('backupKey');
-
     const defaultUserAvatar = (
       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-full">
         <path
@@ -237,14 +234,7 @@ export class NlBanner {
             <div>
               <div>
                 {this.titleBanner && <p class="mb-2 text-center show-slow max-w-40 min-w-40 mx-auto">{this.titleBanner}</p>}
-                {isTemporary && (
-                  <Fragment>
-                    {!isBackupKey && <p class="mb-2 text-center show-slow text-red-400 max-w-40 min-w-40 mx-auto">Your profile may be lost if you close this tab</p>}
-                    <div class="mb-2">
-                      <button-base onClick={() => this.handleImport()} theme="lemonade" titleBtn="Back up profile" />
-                    </div>
-                  </Fragment>
-                )}
+
                 <div class="mb-2">
                   <nl-change-account currentAccount={this.userInfo} accounts={this.accounts} />
                 </div>

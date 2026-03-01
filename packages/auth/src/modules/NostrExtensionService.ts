@@ -60,6 +60,7 @@ class NostrExtensionService extends EventEmitter {
   }
 
   private async setExtensionReadPubkey(expectedPubkey?: string) {
+    // @ts-ignore
     window.nostr = this.nostrExtension;
     // @ts-ignore
     const pubkey = await window.nostr.getPublicKey();
@@ -81,6 +82,7 @@ class NostrExtensionService extends EventEmitter {
   }
 
   public unsetExtension(nostr: Nostr) {
+    // @ts-ignore
     if (window.nostr === this.nostrExtension) {
       // @ts-ignore
       window.nostr = nostr;

@@ -1,7 +1,9 @@
 import { Info, RecentType } from '@konemono/nostr-login-components/dist/types/types';
-import NDK, { NDKEvent, NDKRelaySet, NDKSigner, NDKUser } from '@nostr-dev-kit/ndk';
-import { generatePrivateKey } from 'nostr-tools';
+import { generateSecretKey, finalizeEvent, Relay } from 'nostr-tools';
+import { bytesToHex, hexToBytes } from '@noble/hashes/utils';
 import { NostrLoginOptions } from '../types';
+import { RelayPool } from '../modules/Nip46';
+import { PrivateKeySigner } from '../modules/Signer';
 
 const LOCAL_STORE_KEY = '__nostrlogin_nip46';
 const LOGGED_IN_ACCOUNTS = '__nostrlogin_accounts';
@@ -29,12 +31,53 @@ export const localStorageRemoveItem = (key: string) => {
   localStorage.removeItem(key);
 };
 
-export const fetchProfile = async (info: Info, profileNdk: NDK) => {
-  const user = new NDKUser({ pubkey: info.pubkey });
+export const fetchProfile = async (info: Info, profilePool: RelayPool): Promise<any> => {
+  // RelayPool 内の接続済みリレーから kind:0 を取得する
+  const pubkey = info.pubkey;
+  if (!pubkey) return null;
 
-  user.ndk = profileNdk;
+  return new Promise<any>(resolve => {
+    let found = false;
+    const timeout = setTimeout(() => {
+      if (!found) resolve(null);
+    }, 8000);
 
-  return await user.fetchProfile();
+    const unsubFns: (() => void)[] = [];
+    for (const relay of profilePool.relays.values()) {
+      if (!relay.connected) continue;
+      try {
+        const sub = relay.subscribe([{ kinds: [0], authors: [pubkey], limit: 1 }], {
+          onevent: (event: any) => {
+            if (found) return;
+            found = true;
+            clearTimeout(timeout);
+            for (const fn of unsubFns) {
+              try {
+                fn();
+              } catch (_) {}
+            }
+            try {
+              const profile = JSON.parse(event.content);
+              resolve(profile);
+            } catch {
+              resolve(null);
+            }
+          },
+          oneose: () => {
+            // EOSE が来ても他のリレーが応答する可能性があるため待つ
+          },
+        });
+        unsubFns.push(() => sub.close());
+      } catch (e) {
+        console.warn('fetchProfile: subscribe failed on', relay.url, e);
+      }
+    }
+
+    if (unsubFns.length === 0) {
+      clearTimeout(timeout);
+      resolve(null);
+    }
+  });
 };
 
 export const prepareSignupRelays = (signupRelays?: string) => {
@@ -46,44 +89,62 @@ export const prepareSignupRelays = (signupRelays?: string) => {
   return relays;
 };
 
-export const createProfile = async (info: Info, profileNdk: NDK, signer: NDKSigner, signupRelays?: string, outboxRelays?: string[]) => {
+export const createProfile = async (info: Info, profilePool: RelayPool, signer: PrivateKeySigner, signupRelays?: string, outboxRelays?: string[]) => {
   const meta = {
     name: info.name,
   };
 
-  const profileEvent = new NDKEvent(profileNdk, {
-    kind: 0,
-    created_at: Math.floor(Date.now() / 1000),
-    pubkey: info.pubkey,
-    content: JSON.stringify(meta),
-    tags: [],
-  });
-  if (window.location.hostname) profileEvent.tags.push(['client', window.location.hostname]);
+  const profileTags: string[][] = [];
+  if (window.location.hostname) profileTags.push(['client', window.location.hostname]);
 
-  const relaysEvent = new NDKEvent(profileNdk, {
-    kind: 10002,
-    created_at: Math.floor(Date.now() / 1000),
-    pubkey: info.pubkey,
-    content: '',
-    tags: [],
-  });
+  const profileEvent = finalizeEvent(
+    {
+      kind: 0,
+      created_at: Math.floor(Date.now() / 1000),
+      tags: profileTags,
+      content: JSON.stringify(meta),
+    },
+    hexToBytes(signer.privateKey),
+  );
 
   const relays = prepareSignupRelays(signupRelays);
-  for (const r of relays) {
-    relaysEvent.tags.push(['r', r]);
-  }
+  const relayTags: string[][] = relays.map(r => ['r', r]);
 
-  await profileEvent.sign(signer);
+  const relaysEvent = finalizeEvent(
+    {
+      kind: 10002,
+      created_at: Math.floor(Date.now() / 1000),
+      tags: relayTags,
+      content: '',
+    },
+    hexToBytes(signer.privateKey),
+  );
+
   console.log('signed profile', profileEvent);
-  await relaysEvent.sign(signer);
   console.log('signed relays', relaysEvent);
 
   const outboxRelaysFinal = outboxRelays && outboxRelays.length ? outboxRelays : OUTBOX_RELAYS;
 
-  await profileEvent.publish(NDKRelaySet.fromRelayUrls(outboxRelaysFinal, profileNdk));
-  console.log('published profile', profileEvent);
-  await relaysEvent.publish(NDKRelaySet.fromRelayUrls(outboxRelaysFinal, profileNdk));
-  console.log('published relays', relaysEvent);
+  // 一時的にリレーに接続してイベントを発行
+  const publishPromises: Promise<void>[] = [];
+  for (const url of outboxRelaysFinal) {
+    publishPromises.push(
+      (async () => {
+        try {
+          const relay = await Relay.connect(url);
+          await relay.publish(profileEvent);
+          console.log('published profile to', url);
+          await relay.publish(relaysEvent);
+          console.log('published relays to', url);
+          relay.close();
+        } catch (e) {
+          console.warn('createProfile: failed to publish to', url, e);
+        }
+      })(),
+    );
+  }
+
+  await Promise.allSettled(publishPromises);
 };
 
 export const bunkerUrlToInfo = (bunkerUrl: string, sk = ''): Info => {
@@ -92,7 +153,7 @@ export const bunkerUrlToInfo = (bunkerUrl: string, sk = ''): Info => {
   return {
     pubkey: '',
     signerPubkey: url.hostname || url.pathname.split('//')[1],
-    sk: sk || generatePrivateKey(),
+    sk: sk || bytesToHex(generateSecretKey()),
     relays: url.searchParams.getAll('relay'),
     token: url.searchParams.get('secret') || '',
     authMethod: 'connect',
