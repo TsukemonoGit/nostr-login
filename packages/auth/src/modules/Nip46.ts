@@ -42,26 +42,41 @@ class NostrRpc extends NDKNostrRpc {
     // リレーが不安定な状態ではEOSEが届かず無限にハングする。
     // NIP-46ではリアルタイムのレスポンスのみ必要なので、
     // EOSE待ちをスキップして直接subscribeする。
+    // cacheUsage: ONLY_RELAY で確実にリレーからのみ購読する。
+    // onEvent を使って race condition を回避（NDK推奨）。
     const sub = this._ndk.subscribe(filter, {
       closeOnEose: false,
       groupable: false,
-    });
-
-    sub.on('event', async (event: NDKEvent) => {
-      try {
-        const parsedEvent = await this.parseEvent(event);
-        if ((parsedEvent as NDKRpcRequest).method) {
-          this.emit('request', parsedEvent);
-        } else {
-          this.emit(`response-${parsedEvent.id}`, parsedEvent);
+      cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY,
+      onEvent: async (event: NDKEvent) => {
+        try {
+          const parsedEvent = await this.parseEvent(event);
+          if ((parsedEvent as NDKRpcRequest).method) {
+            this.emit('request', parsedEvent);
+          } else {
+            this.emit(`response-${parsedEvent.id}`, parsedEvent);
+          }
+        } catch (e) {
+          console.error('error parsing event in subscription', e);
         }
-      } catch (e) {
-        console.error('error parsing event in subscription', e);
-      }
+      },
     });
 
     this.sub = sub;
     return sub;
+  }
+
+  /**
+   * subscription が無ければ作る。localSigner の pubkey で kind:24133 を購読。
+   */
+  public async ensureSubscription(): Promise<void> {
+    if (this.sub) return;
+    const pubkey = this._signer.pubkey;
+    console.log('ensureSubscription: subscribing for', pubkey);
+    await this.subscribe({
+      'kinds': [24133],
+      '#p': [pubkey],
+    });
   }
 
   public stop() {
@@ -147,23 +162,27 @@ class NostrRpc extends NDKNostrRpc {
     }
   }
 
-  // 修正: listen メソッドの改善
+  /**
+   * subscriptionを開始してから connect response を待つ。
+   * listen 後もsubscriptionは維持する（後続の get_public_key 等で必要）。
+   */
   public async listen(nostrConnectSecret: string): Promise<string> {
     const pubkey = this._signer.pubkey;
     console.log('nostr-login listening for conn to', pubkey, 'expecting secret:', nostrConnectSecret);
 
-    const sub = await this.subscribe({
-      'kinds': [24133],
-      '#p': [pubkey],
-    });
+    await this.ensureSubscription();
 
     return new Promise<string>((ok, err) => {
       const timeout = setTimeout(() => {
-        this.stop();
         err(new Error('Connection timeout: no response from signer'));
       }, 60000); // 60秒のタイムアウト
 
-      sub.on('event', async (event: NDKEvent) => {
+      // subscribe の onEvent ハンドラが response-${id} を emit するが、
+      // listen のレスポンスは request id が無い（unsolicited）ので
+      // 'request' イベントとして来る可能性がある。
+      // 代わりに subscribe 側でパースされたイベントを
+      // 直接 NDKSubscription の event で受け取る。
+      const handler = async (event: NDKEvent) => {
         try {
           const parsedEvent = await this.parseEvent(event);
           console.log('listen parsedEvent', parsedEvent);
@@ -180,35 +199,40 @@ class NostrRpc extends NDKNostrRpc {
             // secretの厳密な検証
             if (response.result === nostrConnectSecret) {
               clearTimeout(timeout);
-              this.stop();
+              // subscriptionは維持する（後続リクエストで使うため stop しない）
               console.log('Connection established with signer:', event.pubkey);
               ok(event.pubkey);
             } else if (response.result === 'ack') {
               // ackは古い実装用の互換性のため警告のみ
               console.warn('Received "ack" instead of secret. This may indicate an older signer implementation.');
               clearTimeout(timeout);
-              this.stop();
               ok(event.pubkey);
             } else {
               console.error('Invalid response:', response);
               clearTimeout(timeout);
-              this.stop();
               err(new Error(response.error || 'Invalid connection response'));
             }
           }
         } catch (e) {
           console.error('Error parsing event in listen', e, event.rawEvent());
         }
-      });
+      };
 
-      sub.on('eose', () => {
-        console.log('EOSE received in listen');
-      });
+      if (this.sub) {
+        this.sub.on('event', handler);
+      }
     });
   }
 
+  /**
+   * subscriptionが無ければ開始してから connect リクエストを送る。
+   * レスポンスは subscription の event ハンドラ経由で受け取る。
+   */
   public async connect(pubkey: string, token?: string, perms?: string) {
     console.log('Sending connect request to', pubkey, 'with perms:', perms);
+
+    // connect のレスポンスを受け取るために subscription が必要
+    await this.ensureSubscription();
 
     return new Promise<void>((ok, err) => {
       const timeout = setTimeout(() => {
@@ -448,7 +472,10 @@ export class Nip46Signer extends NDKNip46Signer {
   private _rpc: IframeNostrRpc;
 
   constructor(ndk: NDK, localSigner: PrivateKeySigner, signerPubkey: string, iframeOrigin?: string) {
-    super(ndk, signerPubkey, localSigner);
+    // Pass `false` to skip NDK's built-in init (nip05Init/bunkerFlowInit/nostrconnectFlowInit)
+    // because we manage bunkerPubkey and RPC ourselves.
+    super(ndk, false as any, localSigner);
+    this.bunkerPubkey = signerPubkey;
 
     this._rpc = new IframeNostrRpc(ndk, localSigner, iframeOrigin);
     this._rpc.setUseNip44(true);

@@ -653,7 +653,7 @@ class AuthNostrService extends EventEmitter implements Signer {
           }
         }
 
-        await this.ndk.connect();
+        await this.ndk.connect(10000); // 10秒のタイムアウトでリレー接続
 
         const localSigner = new PrivateKeySigner(info.sk!);
         this.signer = new Nip46Signer(this.ndk, localSigner, info.signerPubkey!, iframeOrigin);
@@ -797,7 +797,7 @@ class AuthNostrService extends EventEmitter implements Signer {
     this.ensureRelaysInPool();
 
     try {
-      await this.ndk.connect();
+      await this.ndk.connect(10000);
     } catch (e) {
       console.warn('forceReconnect: ndk.connect() threw, will poll for connection...', e);
     }
@@ -819,7 +819,7 @@ class AuthNostrService extends EventEmitter implements Signer {
       this.ensureRelaysInPool();
 
       try {
-        await this.ndk.connect();
+        await this.ndk.connect(10000);
       } catch (e) {
         console.warn('ensureRelayConnection: ndk.connect() threw, will poll for connection...', e);
       }
