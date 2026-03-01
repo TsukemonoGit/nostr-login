@@ -445,7 +445,6 @@ export class ReadyListener {
 }
 
 export class Nip46Signer extends NDKNip46Signer {
-  private _userPubkey: string = '';
   private _rpc: IframeNostrRpc;
 
   constructor(ndk: NDK, localSigner: PrivateKeySigner, signerPubkey: string, iframeOrigin?: string) {
@@ -460,14 +459,10 @@ export class Nip46Signer extends NDKNip46Signer {
     this.rpc = this._rpc;
   }
 
-  get userPubkey() {
-    return this._userPubkey;
-  }
-
   private async setSignerPubkey(signerPubkey: string, sameAsUser: boolean = false) {
     console.log('setSignerPubkey', signerPubkey);
 
-    this.remotePubkey = signerPubkey;
+    this.bunkerPubkey = signerPubkey;
 
     this._rpc.on(`iframeRestart-${signerPubkey}`, () => {
       this.emit('iframeRestart');
@@ -477,28 +472,28 @@ export class Nip46Signer extends NDKNip46Signer {
   }
 
   public async initUserPubkey(hintPubkey?: string) {
-    if (this._userPubkey) {
-      console.warn('initUserPubkey already called, pubkey:', this._userPubkey);
+    if (this.userPubkey) {
+      console.warn('initUserPubkey already called, pubkey:', this.userPubkey);
       return;
     }
 
     if (hintPubkey) {
-      this._userPubkey = hintPubkey;
-      console.log('User pubkey set from hint:', this._userPubkey);
+      this.userPubkey = hintPubkey;
+      console.log('User pubkey set from hint:', this.userPubkey);
       return;
     }
 
-    console.log('Requesting user pubkey from signer:', this.remotePubkey);
+    console.log('Requesting user pubkey from signer:', this.bunkerPubkey);
 
-    this._userPubkey = await new Promise<string>((ok, err) => {
-      if (!this.remotePubkey) throw new Error('Signer pubkey not set');
+    this.userPubkey = await new Promise<string>((ok, err) => {
+      if (!this.bunkerPubkey) throw new Error('Signer pubkey not set');
 
       const timeout = setTimeout(() => {
         err(new Error('Timeout getting user pubkey'));
       }, 30000);
 
-      console.log('get_public_key', this.remotePubkey);
-      this._rpc.sendRequest(this.remotePubkey, 'get_public_key', [], 24133, (response: NDKRpcResponse) => {
+      console.log('get_public_key', this.bunkerPubkey);
+      this._rpc.sendRequest(this.bunkerPubkey, 'get_public_key', [], 24133, (response: NDKRpcResponse) => {
         clearTimeout(timeout);
 
         if (response.error) {
@@ -517,9 +512,9 @@ export class Nip46Signer extends NDKNip46Signer {
   }
 
   public async connect(token?: string, perms?: string) {
-    if (!this.remotePubkey) throw new Error('No signer pubkey');
-    await this._rpc.connect(this.remotePubkey, token, perms);
-    await this.setSignerPubkey(this.remotePubkey);
+    if (!this.bunkerPubkey) throw new Error('No signer pubkey');
+    await this._rpc.connect(this.bunkerPubkey, token, perms);
+    await this.setSignerPubkey(this.bunkerPubkey);
   }
 
   public async setListenReply(reply: any, nostrConnectSecret: string) {

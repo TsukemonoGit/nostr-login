@@ -56,6 +56,7 @@
 - [nl-info-extension](../nl-info-extension)
 - [nl-signin-read-only](../nl-signin-read-only)
 - [nl-signin-bunker-url](../nl-signin-bunker-url)
+- [nl-signin-nsec](../nl-signin-nsec)
 - [nl-welcome-signin](../nl-welcome-signin)
 - [nl-welcome-signup](../nl-welcome-signup)
 - [nl-signin-connection-string](../nl-signin-connection-string)
@@ -79,6 +80,7 @@ graph TD;
   nl-auth --> nl-info-extension
   nl-auth --> nl-signin-read-only
   nl-auth --> nl-signin-bunker-url
+  nl-auth --> nl-signin-nsec
   nl-auth --> nl-welcome-signin
   nl-auth --> nl-welcome-signup
   nl-auth --> nl-signin-connection-string
@@ -99,6 +101,7 @@ graph TD;
   nl-otp-migrate --> button-base
   nl-signin-read-only --> button-base
   nl-signin-bunker-url --> button-base
+  nl-signin-nsec --> button-base
   nl-welcome-signin --> button-base
   nl-welcome-signup --> button-base
   nl-connect --> nl-nip46-relay-settings

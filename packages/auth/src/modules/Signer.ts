@@ -4,15 +4,15 @@ import { getPublicKey } from 'nostr-tools';
 
 export class PrivateKeySigner extends NDKPrivateKeySigner {
   private nip44: Nip44 = new Nip44();
-  private _pubkey: string;
+  private _derivedPubkey: string;
 
   constructor(privateKey: string) {
     super(privateKey);
-    this._pubkey = getPublicKey(privateKey);
+    this._derivedPubkey = getPublicKey(privateKey);
   }
 
-  get pubkey() {
-    return this._pubkey;
+  override get pubkey() {
+    return this._derivedPubkey;
   }
 
   encryptNip44(recipient: NDKUser, value: string): Promise<string> {

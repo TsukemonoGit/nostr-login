@@ -63,6 +63,11 @@ const { state, onChange, reset } = createStore({
     code: '',
   },
 
+  // State NlSigninNsec
+  nlSigninNsec: {
+    nsecValue: '',
+  },
+
   nlImport: null as ConnectionString | null,
 });
 
@@ -82,6 +87,7 @@ onChange('screen', () => {
   state.nlSignin.loginName = '';
   state.nlSignup.signupName = '';
   state.nlSignup.domain = '';
+  state.nlSigninNsec.nsecValue = '';
 
   // if (value === CURRENT_MODULE.LOGIN || value === CURRENT_MODULE.SIGNUP || value === CURRENT_MODULE.LOGIN_BUNKER_URL || value === CURRENT_MODULE.LOGIN_READ_ONLY) {
   //   state.prevScreen = CURRENT_MODULE.WELCOME;

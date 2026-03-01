@@ -154,6 +154,8 @@ export class NlAuth {
           return <nl-signin-bunker-url />;
         case CURRENT_MODULE.LOGIN_OTP:
           return <nl-signin-otp />;
+        case CURRENT_MODULE.LOGIN_NSEC:
+          return <nl-signin-nsec />;
         case CURRENT_MODULE.WELCOME_LOGIN:
           return <nl-welcome-signin hasOTP={this.hasOTP} authMethods={this.authMethods} hasExtension={this.hasExtension} />;
         case CURRENT_MODULE.WELCOME_SIGNUP:

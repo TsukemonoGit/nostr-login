@@ -3,15 +3,16 @@
 このリポジトリは [nostr-protocol/nostr-login](https://github.com/nostr-protocol/nostr-login) のフォークです。
 元リポジトリに対し、以下の機能を追加・改善しています：
 
-| 機能                          | 説明                                                                    |
-| ----------------------------- | ----------------------------------------------------------------------- |
-| **複数 NIP-46 リレー対応**    | 単一リレー固定 → UI上で任意の複数リレーを追加・削除・リセット可能       |
-| **QR コード読み取り**         | bunker URL の手入力のみ → カメラで QR コードをスキャンして接続          |
-| **NIP-46 署名のリトライ**     | リレー切断・タイムアウト時に自動リトライ（最大3回）& 強制再接続         |
-| **オフライン復帰の改善**      | タイムアウト時に signer を破壊せず保持し、オンライン復帰後に再利用      |
-| **subscription 再開の改善**   | リレー再接続時に subscription を確実に再開し、署名ハングを防止          |
-| **ダイアログ閉じ時の安定性**  | ログイン済みでダイアログを開閉しても signer が破壊されないように修正    |
-| **安定性改善**                | 無限ローディング問題の解消、タイムアウト管理、キャンセル機能            |
+| 機能                         | 説明                                                                 |
+| ---------------------------- | -------------------------------------------------------------------- |
+| **複数 NIP-46 リレー対応**   | 単一リレー固定 → UI上で任意の複数リレーを追加・削除・リセット可能    |
+| **QR コード読み取り**        | bunker URL の手入力のみ → カメラで QR コードをスキャンして接続       |
+| **NIP-46 署名のリトライ**    | リレー切断・タイムアウト時に自動リトライ（最大3回）& 強制再接続      |
+| **オフライン復帰の改善**     | タイムアウト時に signer を破壊せず保持し、オンライン復帰後に再利用   |
+| **subscription 再開の改善**  | リレー再接続時に subscription を確実に再開し、署名ハングを防止       |
+| **ダイアログ閉じ時の安定性** | ログイン済みでダイアログを開閉しても signer が破壊されないように修正 |
+| **安定性改善**               | 無限ローディング問題の解消、タイムアウト管理、キャンセル機能         |
+| **nsec ログイン**            | 外部で作成した秘密鍵（nsec）を直接入力してログイン可能               |
 
 ### インストール
 
@@ -99,7 +100,7 @@ useEffect(() => {
 | `perms`                   | `data-perms`                | リクエストする[パーミッション](https://github.com/nostr-protocol/nips/blob/master/46.md#requested-permissions)（カンマ区切り） 例: `sign_event:1,nip04_encrypt` |
 | `startScreen`             | `data-start-screen`         | 起動時の画面（下記参照）                                                                                                                                        |
 | `noBanner`                | `data-no-banner`            | `true` でバナーを非表示にする（イベントディスパッチで手動起動）                                                                                                 |
-| `methods`                 | `data-methods`              | 許可する認証方法（カンマ区切り）: `connect`, `extension`, `readOnly`, `local`                                                                                   |
+| `methods`                 | `data-methods`              | 許可する認証方法（カンマ区切り）: `connect`, `extension`, `readOnly`, `local`, `nsec`                                                                           |
 | `title`                   | `data-title`                | ウェルカム画面のタイトル                                                                                                                                        |
 | `description`             | `data-description`          | ウェルカム画面の説明文                                                                                                                                          |
 | `otpRequestUrl`           | `data-otp-request-url`      | OTPリクエスト用URL                                                                                                                                              |
@@ -115,7 +116,7 @@ useEffect(() => {
 
 ### startScreen の選択肢
 
-`welcome` · `welcome-login` · `welcome-signup` · `signup` · `local-signup` · `login` · `otp` · `connect` · `login-bunker-url` · `login-read-only` · `connection-string` · `switch-account` · `import`
+`welcome` · `welcome-login` · `welcome-signup` · `signup` · `local-signup` · `login` · `login-nsec` · `otp` · `connect` · `login-bunker-url` · `login-read-only` · `connection-string` · `switch-account` · `import`
 
 ---
 
@@ -180,6 +181,12 @@ bunker URL 入力画面で **Scan QR Code** ボタンからカメラを起動し
 ### オフライン復帰の改善
 
 オフラインでタイムアウトした場合、signer インスタンスを破壊せず進行中のRPCリクエストだけをキャンセルします。オンライン復帰後にそのまま署名を再開できます。
+
+### nsec ログイン
+
+Log in 画面の「With nsec」ボタンから、外部で生成した秘密鍵（nsec）を直接入力してログインできます。入力画面には警告メッセージが表示され、秘密鍵の直接入力は推奨されない旨と、キーストアサービスへの移行を案内します。ログイン後はインポートフロー（キーストアへの鍵移行案内）が表示されます。
+
+> **注意**: nsec はローカルストレージに保存されます。セキュリティ上、キーストアサービス（nsec.app 等）への移行を推奨します。
 
 ---
 

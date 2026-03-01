@@ -395,6 +395,21 @@ class ModalManager extends EventEmitter {
         localSignup(event.detail);
       });
 
+      this.modal.addEventListener('nlLoginNsec', async (event: any) => {
+        await exec(async () => {
+          const nsecValue = event.detail;
+          if (!nsecValue) throw new Error('Please enter your nsec');
+          let decoded;
+          try {
+            decoded = nip19.decode(nsecValue);
+          } catch (e) {
+            throw new Error('Invalid nsec format');
+          }
+          if (decoded.type !== 'nsec') throw new Error('Invalid key type, expected nsec');
+          await this.authNostrService.localSignup('', decoded.data as string);
+        });
+      });
+
       this.modal.addEventListener('nlSignupNjump', (event: any) => {
         signupNjump();
       });

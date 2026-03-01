@@ -15,6 +15,7 @@ export enum CURRENT_MODULE {
   LOADING = 'loading',
   PREVIOUSLY_LOGGED = 'switch-account',
   LOGIN_OTP = 'otp',
+  LOGIN_NSEC = 'login-nsec',
   CONNECT = 'connect',
   CONNECTION_STRING = 'connection-string',
   IFRAME = 'iframe',

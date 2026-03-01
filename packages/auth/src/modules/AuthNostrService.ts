@@ -676,8 +676,8 @@ class AuthNostrService extends EventEmitter implements Signer {
           await this.signer!.initUserPubkey(info.pubkey);
         }
 
-        info.pubkey = this.signer!.userPubkey;
-        info.signerPubkey = this.signer!.remotePubkey;
+        info.pubkey = this.signer!.userPubkey as string;
+        info.signerPubkey = this.signer!.bunkerPubkey;
 
         console.log('Signer initialized successfully. User pubkey:', info.pubkey, 'Signer pubkey:', info.signerPubkey);
 
@@ -756,7 +756,7 @@ class AuthNostrService extends EventEmitter implements Signer {
           throw new Error('Signer is not initialized. Please reconnect.');
         }
         await this.ensureRelayConnection();
-        event.pubkey = this.signer.remotePubkey;
+        event.pubkey = this.signer.bunkerPubkey;
         event.id = getEventHash(event);
         event.sig = await this.signer?.sign(event);
         console.log('signed', { event, attempt });
@@ -903,7 +903,7 @@ class AuthNostrService extends EventEmitter implements Signer {
 
   private async codec_call(method: string, pubkey: string, param: string) {
     return new Promise<string>((resolve, reject) => {
-      this.signer!.rpc.sendRequest(this.signer!.remotePubkey!, method, [pubkey, param], 24133, (response: NDKRpcResponse) => {
+      this.signer!.rpc.sendRequest(this.signer!.bunkerPubkey!, method, [pubkey, param], 24133, (response: NDKRpcResponse) => {
         if (!response.error) {
           resolve(response.result);
         } else {

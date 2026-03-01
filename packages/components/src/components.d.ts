@@ -138,6 +138,10 @@ export namespace Components {
         "description": string;
         "titleLogin": string;
     }
+    interface NlSigninNsec {
+        "description": string;
+        "titleLogin": string;
+    }
     interface NlSigninOtp {
         "description": string;
         "descriptionOTP": string;
@@ -231,6 +235,10 @@ export interface NlSigninBunkerUrlCustomEvent<T> extends CustomEvent<T> {
 export interface NlSigninConnectionStringCustomEvent<T> extends CustomEvent<T> {
     detail: T;
     target: HTMLNlSigninConnectionStringElement;
+}
+export interface NlSigninNsecCustomEvent<T> extends CustomEvent<T> {
+    detail: T;
+    target: HTMLNlSigninNsecElement;
 }
 export interface NlSigninOtpCustomEvent<T> extends CustomEvent<T> {
     detail: T;
@@ -577,6 +585,23 @@ declare global {
         prototype: HTMLNlSigninConnectionStringElement;
         new (): HTMLNlSigninConnectionStringElement;
     };
+    interface HTMLNlSigninNsecElementEventMap {
+        "nlLoginNsec": string;
+    }
+    interface HTMLNlSigninNsecElement extends Components.NlSigninNsec, HTMLStencilElement {
+        addEventListener<K extends keyof HTMLNlSigninNsecElementEventMap>(type: K, listener: (this: HTMLNlSigninNsecElement, ev: NlSigninNsecCustomEvent<HTMLNlSigninNsecElementEventMap[K]>) => any, options?: boolean | AddEventListenerOptions): void;
+        addEventListener<K extends keyof DocumentEventMap>(type: K, listener: (this: Document, ev: DocumentEventMap[K]) => any, options?: boolean | AddEventListenerOptions): void;
+        addEventListener<K extends keyof HTMLElementEventMap>(type: K, listener: (this: HTMLElement, ev: HTMLElementEventMap[K]) => any, options?: boolean | AddEventListenerOptions): void;
+        addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions): void;
+        removeEventListener<K extends keyof HTMLNlSigninNsecElementEventMap>(type: K, listener: (this: HTMLNlSigninNsecElement, ev: NlSigninNsecCustomEvent<HTMLNlSigninNsecElementEventMap[K]>) => any, options?: boolean | EventListenerOptions): void;
+        removeEventListener<K extends keyof DocumentEventMap>(type: K, listener: (this: Document, ev: DocumentEventMap[K]) => any, options?: boolean | EventListenerOptions): void;
+        removeEventListener<K extends keyof HTMLElementEventMap>(type: K, listener: (this: HTMLElement, ev: HTMLElementEventMap[K]) => any, options?: boolean | EventListenerOptions): void;
+        removeEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions): void;
+    }
+    var HTMLNlSigninNsecElement: {
+        prototype: HTMLNlSigninNsecElement;
+        new (): HTMLNlSigninNsecElement;
+    };
     interface HTMLNlSigninOtpElementEventMap {
         "nlLoginOTPUser": string;
         "nlLoginOTPCode": string;
@@ -685,6 +710,7 @@ declare global {
         "nl-signin": HTMLNlSigninElement;
         "nl-signin-bunker-url": HTMLNlSigninBunkerUrlElement;
         "nl-signin-connection-string": HTMLNlSigninConnectionStringElement;
+        "nl-signin-nsec": HTMLNlSigninNsecElement;
         "nl-signin-otp": HTMLNlSigninOtpElement;
         "nl-signin-read-only": HTMLNlSigninReadOnlyElement;
         "nl-signup": HTMLNlSignupElement;
@@ -858,6 +884,11 @@ declare namespace LocalJSX {
         "onNlNostrConnectDefault"?: (event: NlSigninConnectionStringCustomEvent<void>) => void;
         "titleLogin"?: string;
     }
+    interface NlSigninNsec {
+        "description"?: string;
+        "onNlLoginNsec"?: (event: NlSigninNsecCustomEvent<string>) => void;
+        "titleLogin"?: string;
+    }
     interface NlSigninOtp {
         "description"?: string;
         "descriptionOTP"?: string;
@@ -919,6 +950,7 @@ declare namespace LocalJSX {
         "nl-signin": NlSignin;
         "nl-signin-bunker-url": NlSigninBunkerUrl;
         "nl-signin-connection-string": NlSigninConnectionString;
+        "nl-signin-nsec": NlSigninNsec;
         "nl-signin-otp": NlSigninOtp;
         "nl-signin-read-only": NlSigninReadOnly;
         "nl-signup": NlSignup;
@@ -953,6 +985,7 @@ declare module "@stencil/core" {
             "nl-signin": LocalJSX.NlSignin & JSXBase.HTMLAttributes<HTMLNlSigninElement>;
             "nl-signin-bunker-url": LocalJSX.NlSigninBunkerUrl & JSXBase.HTMLAttributes<HTMLNlSigninBunkerUrlElement>;
             "nl-signin-connection-string": LocalJSX.NlSigninConnectionString & JSXBase.HTMLAttributes<HTMLNlSigninConnectionStringElement>;
+            "nl-signin-nsec": LocalJSX.NlSigninNsec & JSXBase.HTMLAttributes<HTMLNlSigninNsecElement>;
             "nl-signin-otp": LocalJSX.NlSigninOtp & JSXBase.HTMLAttributes<HTMLNlSigninOtpElement>;
             "nl-signin-read-only": LocalJSX.NlSigninReadOnly & JSXBase.HTMLAttributes<HTMLNlSigninReadOnlyElement>;
             "nl-signup": LocalJSX.NlSignup & JSXBase.HTMLAttributes<HTMLNlSignupElement>;
