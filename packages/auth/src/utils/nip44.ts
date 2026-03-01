@@ -1,5 +1,5 @@
 import { chacha20 } from '@noble/ciphers/chacha.js';
-import { concatBytes, randomBytes, utf8ToBytes } from '@noble/hashes/utils';
+import { concatBytes, randomBytes, utf8ToBytes, hexToBytes } from '@noble/hashes/utils';
 import { equalBytes } from '@noble/ciphers/utils.js';
 import { secp256k1 } from '@noble/curves/secp256k1';
 import { expand as hkdf_expand, extract as hkdf_extract } from '@noble/hashes/hkdf';
@@ -7,7 +7,6 @@ import { sha256 } from '@noble/hashes/sha256';
 import { hmac } from '@noble/hashes/hmac';
 import { base64 } from '@scure/base';
 import { getPublicKey } from 'nostr-tools';
-import { hexToBytes } from '@noble/hashes/utils';
 
 // from https://github.com/nbd-wtf/nostr-tools
 
@@ -130,7 +129,7 @@ export class Nip44 {
     return u.getConversationKey(privkey, pubkey);
   }
 
-  private getKey(privkey: string, pubkey: string, extractable?: boolean) {
+  private getKey(privkey: string, pubkey: string) {
     const id = getPublicKey(hexToBytes(privkey)) + pubkey;
     let cryptoKey = this.cache.get(id);
     if (cryptoKey) return cryptoKey;

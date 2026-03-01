@@ -1,6 +1,6 @@
 import { Nip44 } from '../utils/nip44';
-import { getPublicKey, nip04, getEventHash, finalizeEvent, verifyEvent } from 'nostr-tools';
-import { hexToBytes, bytesToHex } from '@noble/hashes/utils';
+import { getPublicKey, nip04, finalizeEvent } from 'nostr-tools';
+import { hexToBytes } from '@noble/hashes/utils';
 
 /**
  * NDKPrivateKeySigner の代替。nostr-tools v2 を直接使用。
@@ -15,6 +15,11 @@ export class PrivateKeySigner {
   /** Uint8Array の秘密鍵 (nostr-tools v2 用) */
   private readonly _secretKey: Uint8Array;
   public readonly pubkey: string;
+
+  /** Uint8Array の秘密鍵を返す（hexToBytes の再変換を避けるため） */
+  get secretKey(): Uint8Array {
+    return this._secretKey;
+  }
 
   constructor(privateKey: string) {
     this.privateKey = privateKey;

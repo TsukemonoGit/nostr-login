@@ -2,7 +2,6 @@
 // NDK を完全に除去し、nostr-tools + tseep で NIP-46 RPC を実装
 
 import { Relay, validateEvent, verifyEvent, finalizeEvent } from 'nostr-tools';
-import { hexToBytes } from '@noble/hashes/utils';
 import { EventEmitter } from 'tseep';
 import { PrivateKeySigner } from './Signer';
 import { NIP46_REQUEST_TIMEOUT } from '../const';
@@ -290,8 +289,6 @@ class NostrRpc extends EventEmitter {
     const pubkey = this._signer.pubkey;
     console.log('nostr-login listening for conn to', pubkey, 'expecting secret:', nostrConnectSecret);
 
-    this.ensureSubscription();
-
     return new Promise<string>((ok, err) => {
       const timeout = setTimeout(() => {
         err(new Error('Connection timeout: no response from signer'));
@@ -459,7 +456,7 @@ class NostrRpc extends EventEmitter {
       content: encryptedContent,
     };
 
-    const signed = finalizeEvent(template, hexToBytes(this._signer.privateKey));
+    const signed = finalizeEvent(template, this._signer.secretKey);
 
     return signed as unknown as NostrEvent;
   }
@@ -471,6 +468,7 @@ export class IframeNostrRpc extends NostrRpc {
   private peerOrigin?: string;
   private iframePort?: MessagePort;
   private iframeRequests = new Map<string, { id: string; pubkey: string }>();
+  private pingInterval?: ReturnType<typeof setInterval>;
 
   public constructor(pool: RelayPool, localSigner: PrivateKeySigner, iframePeerOrigin?: string) {
     super(pool, localSigner);
@@ -490,7 +488,9 @@ export class IframeNostrRpc extends NostrRpc {
 
     this.iframePort = port;
 
-    setInterval(() => {
+    // 前回のpingインターバルがあればクリア
+    if (this.pingInterval) clearInterval(this.pingInterval);
+    this.pingInterval = setInterval(() => {
       console.log('iframe-nip46 ping');
       this.iframePort!.postMessage('ping');
     }, 5000);
@@ -539,6 +539,14 @@ export class IframeNostrRpc extends NostrRpc {
 
     // @ts-ignore
     return undefined as RpcResponse;
+  }
+
+  public override stop() {
+    super.stop();
+    if (this.pingInterval) {
+      clearInterval(this.pingInterval);
+      this.pingInterval = undefined;
+    }
   }
 }
 
