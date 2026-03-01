@@ -1,6 +1,6 @@
-import { chacha20 } from '@noble/ciphers/chacha';
+import { chacha20 } from '@noble/ciphers/chacha.js';
 import { concatBytes, randomBytes, utf8ToBytes } from '@noble/hashes/utils';
-import { equalBytes } from '@noble/ciphers/utils';
+import { equalBytes } from '@noble/ciphers/utils.js';
 import { secp256k1 } from '@noble/curves/secp256k1';
 import { expand as hkdf_expand, extract as hkdf_extract } from '@noble/hashes/hkdf';
 import { sha256 } from '@noble/hashes/sha256';

@@ -1,6 +1,6 @@
 {
   "name": "@konemono/nostr-login",
-  "version": "1.13.6",
+  "version": "1.13.7",
   "description": "Extended fork of nostr-login with multi-relay support, QR scanner, and improved stability",
   "main": "./dist/index.esm.js",
   "types": "./dist/index.d.ts",
@@ -26,7 +26,7 @@
     "tseep": "^1.2.1"
   },
   "devDependencies": {
-    "@konemono/nostr-login-components": "^1.2.6",
+    "@konemono/nostr-login-components": "^1.2.7",
     "@rollup/plugin-commonjs": "^25.0.7",
     "@rollup/plugin-node-resolve": "^15.2.3",
     "@rollup/plugin-terser": "^0.4.4",
