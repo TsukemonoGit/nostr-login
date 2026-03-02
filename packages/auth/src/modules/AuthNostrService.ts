@@ -1,5 +1,5 @@
 // packages/auth/src/modules/AuthNostrService.ts
-// NDK を完全に除去し、nostr-tools + tseep + 自前 RelayPool で実装
+// rx-nostr ベースのリレー管理 + NIP-46 RPC 実装
 
 import { localStorageAddAccount, bunkerUrlToInfo, isBunkerUrl, fetchProfile, getBunkerUrl, localStorageRemoveCurrentAccount, createProfile, getIcon } from '../utils';
 import { ConnectionString, Info } from '@konemono/nostr-login-components/dist/types/types';
@@ -97,7 +97,7 @@ class AuthNostrService extends EventEmitter implements Signer {
     for (const r of OUTBOX_RELAYS) {
       this.profilePool.addRelay(r);
     }
-    this.profilePool.connect().catch(e => console.warn('profilePool connect failed', e));
+    // rx-nostr は lazy-keep 戦略により subscription/send 時に自動接続する
 
     this.nip04 = {
       encrypt: this.encrypt04.bind(this),
@@ -652,7 +652,7 @@ class AuthNostrService extends EventEmitter implements Signer {
           }
         }
 
-        await this.pool.connect(10000); // 10秒のタイムアウトでリレー接続
+        // rx-nostr は lazy-keep 戦略で subscribe/send 時に自動接続する
 
         const localSigner = new PrivateKeySigner(info.sk!);
         this.signer = new Nip46Signer(this.pool, localSigner, info.signerPubkey!, iframeOrigin);
@@ -791,16 +791,23 @@ class AuthNostrService extends EventEmitter implements Signer {
 
   /**
    * 強制的にリレーに再接続し、subscriptionを再開する。
+   * RelayPool の自動再接続 Observable と waitForConnection() に委譲。
    */
   private async forceReconnect() {
-    console.log('forceReconnect: forcing clean relay reconnection...');
+    console.log('forceReconnect: forcing relay reconnection...');
 
-    this.pool.disconnectAll();
     this.ensureRelaysInPool();
 
-    await this.pool.connect(10000);
+    // 全リレーに対して reconnect を試行
+    for (const url of this.pool.relayUrls) {
+      try {
+        this.pool.reconnect(url);
+      } catch (e) {
+        console.warn('forceReconnect: failed to reconnect', url, e);
+      }
+    }
 
-    await this.waitForAtLeastOneRelay(8000);
+    await this.pool.waitForConnection(8000);
     await this.ensureSubscription();
   }
 
@@ -811,14 +818,18 @@ class AuthNostrService extends EventEmitter implements Signer {
     const isSubActive = this.signer?.rpc ? (this.signer.rpc as any).isSubscriptionActive?.() !== false : true;
 
     if (!isRelayConnected) {
-      console.log('ensureRelayConnection: relay disconnected, forcing clean reconnect...');
-      this.pool.disconnectAll();
-      this.ensureRelaysInPool();
+      console.log('ensureRelayConnection: no relay connected, triggering reconnect...');
 
-      await this.pool.connect(10000);
+      // 全リレーに reconnect を試行し、接続をリアクティブに待つ
+      for (const url of this.pool.relayUrls) {
+        try {
+          this.pool.reconnect(url);
+        } catch (e) {
+          console.warn('ensureRelayConnection: reconnect failed', url, e);
+        }
+      }
 
-      await this.waitForAtLeastOneRelay(8000);
-
+      await this.pool.waitForConnection(8000);
       await this.ensureSubscription();
     } else if (!isSubActive) {
       console.log('ensureRelayConnection: relay connected but subscription dead, resubscribing...');
@@ -850,20 +861,6 @@ class AuthNostrService extends EventEmitter implements Signer {
       } catch (e) {
         console.warn('ensureSubscription: failed to resubscribe', e);
       }
-    }
-  }
-
-  /**
-   * 少なくとも1つのリレーが接続状態になるまで待つ。
-   */
-  private async waitForAtLeastOneRelay(timeoutMs: number): Promise<void> {
-    const start = Date.now();
-    while (Date.now() - start < timeoutMs) {
-      if (this.pool.isAnyConnected()) return;
-      await new Promise(r => setTimeout(r, 300));
-    }
-    if (!this.pool.isAnyConnected()) {
-      throw new Nip46Error('Failed to connect to any relay', 'RELAY_DISCONNECTED');
     }
   }
 

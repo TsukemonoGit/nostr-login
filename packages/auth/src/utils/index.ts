@@ -1,5 +1,5 @@
 import { Info, RecentType } from '@konemono/nostr-login-components/dist/types/types';
-import { generateSecretKey, finalizeEvent, Relay } from 'nostr-tools';
+import { generateSecretKey, finalizeEvent } from 'nostr-tools';
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils';
 import { NostrLoginOptions } from '../types';
 import { RelayPool } from '../modules/Nip46';
@@ -32,51 +32,31 @@ export const localStorageRemoveItem = (key: string) => {
 };
 
 export const fetchProfile = async (info: Info, profilePool: RelayPool): Promise<any> => {
-  // RelayPool 内の接続済みリレーから kind:0 を取得する
+  // RelayPool (rx-nostr) で kind:0 を取得する
   const pubkey = info.pubkey;
   if (!pubkey) return null;
 
   return new Promise<any>(resolve => {
     let found = false;
     const timeout = setTimeout(() => {
-      if (!found) resolve(null);
+      if (!found) {
+        unsub();
+        resolve(null);
+      }
     }, 8000);
 
-    const unsubFns: (() => void)[] = [];
-    for (const relay of profilePool.relays.values()) {
-      if (!relay.connected) continue;
-      try {
-        const sub = relay.subscribe([{ kinds: [0], authors: [pubkey], limit: 1 }], {
-          onevent: (event: any) => {
-            if (found) return;
-            found = true;
-            clearTimeout(timeout);
-            for (const fn of unsubFns) {
-              try {
-                fn();
-              } catch (_) {}
-            }
-            try {
-              const profile = JSON.parse(event.content);
-              resolve(profile);
-            } catch {
-              resolve(null);
-            }
-          },
-          oneose: () => {
-            // EOSE が来ても他のリレーが応答する可能性があるため待つ
-          },
-        });
-        unsubFns.push(() => sub.close());
-      } catch (e) {
-        console.warn('fetchProfile: subscribe failed on', relay.url, e);
-      }
-    }
-
-    if (unsubFns.length === 0) {
+    const unsub = profilePool.subscribeOnce({ kinds: [0], authors: [pubkey], limit: 1 }, (event: any) => {
+      if (found) return;
+      found = true;
       clearTimeout(timeout);
-      resolve(null);
-    }
+      unsub();
+      try {
+        const profile = JSON.parse(event.content);
+        resolve(profile);
+      } catch {
+        resolve(null);
+      }
+    });
   });
 };
 
@@ -125,26 +105,19 @@ export const createProfile = async (info: Info, profilePool: RelayPool, signer: 
 
   const outboxRelaysFinal = outboxRelays && outboxRelays.length ? outboxRelays : OUTBOX_RELAYS;
 
-  // 一時的にリレーに接続してイベントを発行
-  const publishPromises: Promise<void>[] = [];
-  for (const url of outboxRelaysFinal) {
-    publishPromises.push(
-      (async () => {
-        try {
-          const relay = await Relay.connect(url);
-          await relay.publish(profileEvent);
-          console.log('published profile to', url);
-          await relay.publish(relaysEvent);
-          console.log('published relays to', url);
-          relay.close();
-        } catch (e) {
-          console.warn('createProfile: failed to publish to', url, e);
-        }
-      })(),
-    );
+  // rx-nostr 経由で発行
+  try {
+    await profilePool.publishToRelays(profileEvent as any, outboxRelaysFinal);
+    console.log('published profile to outbox relays');
+  } catch (e) {
+    console.warn('createProfile: failed to publish profile', e);
   }
-
-  await Promise.allSettled(publishPromises);
+  try {
+    await profilePool.publishToRelays(relaysEvent as any, outboxRelaysFinal);
+    console.log('published relays to outbox relays');
+  } catch (e) {
+    console.warn('createProfile: failed to publish relays event', e);
+  }
 };
 
 export const bunkerUrlToInfo = (bunkerUrl: string, sk = ''): Info => {

@@ -7,6 +7,7 @@ This library is a powerful `window.nostr` provider with NIP-46 (Nostr Connect) s
 
 ### Fork Enhancements
 
+- **rx-nostr based relay management** — Replaced raw WebSocket handling with [rx-nostr](https://github.com/penpenpng/rx-nostr) v3: automatic reconnection with exponential backoff, lazy-keep connection strategy, reactive connection monitoring via `createConnectionStateObservable()`, and `cast()` for best-effort event publishing
 - **Multiple NIP-46 relay support** — Add/remove/reset relays from the UI
 - **QR code scanning** — Scan `bunker://` or `nostrconnect://` QR codes with camera
 - **NIP-46 signing retry** — Auto-retry (up to 3 times) with forced reconnection on relay disconnect/timeout
