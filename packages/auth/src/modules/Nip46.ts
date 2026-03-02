@@ -178,9 +178,18 @@ export class RelayPool {
   /**
    * イベントを全デフォルトリレーに発行する。
    * cast() は send() + completeOn:'sent' 相当で、少なくとも1つのリレーに送信できたら resolve する。
+   * 接続済みリレーがない場合は EmptyError になるため、ベストエフォートで処理する。
    */
   async publish(event: NostrEvent): Promise<void> {
-    await this.rxNostr.cast(event as any);
+    try {
+      await this.rxNostr.cast(event as any);
+    } catch (e: any) {
+      if (e?.name === 'EmptyError') {
+        console.warn('RelayPool: publish - no connected relays, event may not have been sent');
+      } else {
+        throw e;
+      }
+    }
   }
 
   /**
@@ -188,7 +197,15 @@ export class RelayPool {
    * 一時リレーは送信完了後に自動切断される。
    */
   async publishToRelays(event: NostrEvent, relays: string[]): Promise<void> {
-    await this.rxNostr.cast(event as any, { on: { relays } });
+    try {
+      await this.rxNostr.cast(event as any, { on: { relays } });
+    } catch (e: any) {
+      if (e?.name === 'EmptyError') {
+        console.warn('RelayPool: publishToRelays - no connected relays, event may not have been sent');
+      } else {
+        throw e;
+      }
+    }
   }
 
   /**
