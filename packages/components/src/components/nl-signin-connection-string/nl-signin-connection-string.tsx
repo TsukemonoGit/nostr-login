@@ -61,6 +61,7 @@ export class NlSigninConnectionString {
                 type="text"
                 class="nl-input peer py-3 px-4 pe-11 ps-11 block w-full border-transparent rounded-lg text-sm disabled:opacity-50 disabled:pointer-events-none dark:border-transparent"
                 placeholder="npub or name@domain"
+                aria-label="Connection string"
                 value={this.connectionString}
                 disabled
               />

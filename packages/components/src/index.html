@@ -105,13 +105,13 @@
             console.log('changeScreen');
           });
 
-          modal.addEventListener('stopFetchHandler', () => {
+          modal.addEventListener('nlStopFetch', () => {
             modal.isLoading = false;
-            console.log('stopFetchHandler');
+            console.log('nlStopFetch');
             // FIXME reset the modal state, return to welcome screen
           });
 
-          modal.addEventListener('handleContinue', () => {
+          modal.addEventListener('nlContinue', () => {
             modal.authUrl = '';
           });
 
@@ -154,11 +154,11 @@
         };
       });
 
-      banner.addEventListener('handleLogoutBanner', () => {
+      banner.addEventListener('nlLogoutBanner', () => {
         banner.userInfo = null;
       });
 
-      banner.addEventListener('handleOpenWelcomeModal', () => {
+      banner.addEventListener('nlOpenWelcomeModal', () => {
         const recent = JSON.parse(localStorage.getItem('__nostrlogin_recent'));
         const accounts = JSON.parse(localStorage.getItem('__nostrlogin_accounts'));
 
@@ -175,7 +175,7 @@
         launch(options);
       });
 
-      banner.addEventListener('handleConfirmLogout', () => {
+      banner.addEventListener('nlConfirmLogout', () => {
         let options = {
           startScreen: 'confirm-logout',
         };
@@ -183,7 +183,7 @@
         launch(options);
       });
 
-      banner.addEventListener('handleBackUpModal', () => {
+      banner.addEventListener('nlBackUpModal', () => {
         let options = {
           startScreen: 'backup-flow',
         };
@@ -203,8 +203,8 @@
         banner.listNotifies = listNotifies;
       });
 
-      banner.addEventListener('handleNotifyConfirmBanner', () => {
-        console.log('handleNotifyConfirmBanner');
+      banner.addEventListener('nlNotifyConfirmBanner', () => {
+        console.log('nlNotifyConfirmBanner');
       });
 
       const startLoading = document.getElementById('startloading');

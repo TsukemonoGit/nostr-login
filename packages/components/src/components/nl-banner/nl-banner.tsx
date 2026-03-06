@@ -25,14 +25,14 @@ export class NlBanner {
   @State() url: string = '';
   @State() isOpenConfirm: boolean = false;
 
-  @Event() handleNotifyConfirmBanner: EventEmitter<string>;
-  @Event() handleNotifyConfirmBannerIframe: EventEmitter<string>;
-  @Event() handleLoginBanner: EventEmitter<string>;
-  @Event() handleLogoutBanner: EventEmitter<string>;
-  @Event() handleOpenWelcomeModal: EventEmitter<string>;
-  @Event() handleConfirmLogout: EventEmitter<string>;
-  @Event() handleImportModal: EventEmitter<string>;
-  @Event() handleCancelTimeout: EventEmitter<void>;
+  @Event() nlNotifyConfirmBanner: EventEmitter<string>;
+  @Event() nlNotifyConfirmBannerIframe: EventEmitter<string>;
+  @Event() nlLoginBanner: EventEmitter<string>;
+  @Event() nlLogoutBanner: EventEmitter<string>;
+  @Event() nlOpenWelcomeModal: EventEmitter<string>;
+  @Event() nlConfirmLogout: EventEmitter<string>;
+  @Event() nlImportModal: EventEmitter<string>;
+  @Event() nlCancelTimeout: EventEmitter<void>;
 
   @Watch('notify')
   watchNotifyHandler(notify: BannerNotify) {
@@ -52,7 +52,7 @@ export class NlBanner {
     if (this.userInfo) {
       this.isOpen = true;
     } else {
-      this.handleOpenWelcomeModal.emit();
+      this.nlOpenWelcomeModal.emit();
     }
   }
 
@@ -61,17 +61,17 @@ export class NlBanner {
   }
 
   handleLogin() {
-    this.handleLoginBanner.emit(METHOD_MODULE.LOGIN);
+    this.nlLoginBanner.emit(METHOD_MODULE.LOGIN);
     this.handleClose();
   }
 
   handleSignup() {
-    this.handleLoginBanner.emit(METHOD_MODULE.SIGNUP);
+    this.nlLoginBanner.emit(METHOD_MODULE.SIGNUP);
     this.handleClose();
   }
 
   handleImport() {
-    this.handleImportModal.emit();
+    this.nlImportModal.emit();
     this.handleClose();
   }
 
@@ -79,7 +79,7 @@ export class NlBanner {
     const isBackupKey = localStorage.getItem('backupKey');
 
     if (isBackupKey) {
-      this.handleLogoutBanner.emit(METHOD_MODULE.LOGOUT);
+      this.nlLogoutBanner.emit(METHOD_MODULE.LOGOUT);
       this.handleClose();
       localStorage.removeItem('backupKey');
 
@@ -87,9 +87,9 @@ export class NlBanner {
     }
 
     if (this.userInfo.authMethod === 'local') {
-      this.handleConfirmLogout.emit();
+      this.nlConfirmLogout.emit();
     } else {
-      this.handleLogoutBanner.emit(METHOD_MODULE.LOGOUT);
+      this.nlLogoutBanner.emit(METHOD_MODULE.LOGOUT);
     }
 
     this.handleClose();
@@ -98,10 +98,10 @@ export class NlBanner {
   handleConfirm() {
     switch (this.mode) {
       case 'authUrl':
-        this.handleNotifyConfirmBanner.emit(this.url);
+        this.nlNotifyConfirmBanner.emit(this.url);
         break;
       case 'iframeAuthUrl':
-        this.handleNotifyConfirmBannerIframe.emit(this.url);
+        this.nlNotifyConfirmBannerIframe.emit(this.url);
         break;
     }
     this.handleClose();
@@ -218,7 +218,7 @@ export class NlBanner {
                   </a>
                   <button-base
                     onClick={() => {
-                      this.handleCancelTimeout.emit();
+                      this.nlCancelTimeout.emit();
                       this.handleClose();
                     }}
                     titleBtn="Cancel"

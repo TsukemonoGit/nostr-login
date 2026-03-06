@@ -1,4 +1,4 @@
-import { Component, Event, EventEmitter, Fragment, h, Prop, Watch } from '@stencil/core';
+import { Component, Event, EventEmitter, Fragment, h, Listen, Prop, Watch } from '@stencil/core';
 import { AuthMethod, ConnectionString, CURRENT_MODULE, Info, NlTheme, RecentType } from '@/types';
 import { state } from '@/store';
 
@@ -36,6 +36,13 @@ export class NlAuth {
   @Event() nlNostrConnectDefaultCancel: EventEmitter<void>;
 
   prevPath: string = '';
+
+  @Listen('keydown', { target: 'window' })
+  handleKeyDown(ev: KeyboardEvent) {
+    if (ev.key === 'Escape') {
+      this.handleClose();
+    }
+  }
 
   @Watch('isLoading')
   watchLoadingHandler(newValue: boolean) {
@@ -126,9 +133,6 @@ export class NlAuth {
     const renderModule = () => {
       if (state.isOTP) return <nl-signin-otp />;
 
-      // @ts-ignore
-      // const t: CURRENT_MODULE = 'import' // lastValuePath
-
       switch (currentModule) {
         case CURRENT_MODULE.WELCOME:
           return <nl-welcome titleWelcome={this.welcomeTitle || undefined} description={this.welcomeDescription || undefined} />;
@@ -189,7 +193,7 @@ export class NlAuth {
 
     return (
       <div class={`theme-${this.theme}`} dir="ltr">
-        <div class={classWrapper}>
+        <div class={classWrapper} role="dialog" aria-modal="true" aria-label="Nostr Login">
           <div onClick={() => this.handleClose()} class="absolute top-0 left-0 w-full h-full bg-gray-500 bg-opacity-75 z-[80]" />
 
           <div class="nl-bg relative z-[81] w-full flex flex-col rounded-xl sm:max-w-lg sm:w-full sm:mx-auto">

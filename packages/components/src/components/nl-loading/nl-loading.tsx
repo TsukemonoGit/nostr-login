@@ -8,19 +8,19 @@ import { CURRENT_MODULE } from '@/types';
   shadow: false,
 })
 export class NlLoading {
-  @Event() stopFetchHandler: EventEmitter<boolean>;
-  @Event() handleContinue: EventEmitter<boolean>;
+  @Event() nlStopFetch: EventEmitter<boolean>;
+  @Event() nlContinue: EventEmitter<boolean>;
   @Prop() path: string;
 
   handleStop(e) {
     e.preventDefault();
-    this.stopFetchHandler.emit();
+    this.nlStopFetch.emit();
   }
 
   handleContinueClick(e) {
     e.preventDefault();
     // reset();
-    this.handleContinue.emit();
+    this.nlContinue.emit();
   }
 
   render() {

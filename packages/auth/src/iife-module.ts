@@ -1,5 +1,6 @@
 import { init } from './index';
 import { NostrLoginOptions, StartScreens } from './types';
+import { AuthMethod } from '@konemono/nostr-login-components/dist/types/types';
 
 // wrap to hide local vars
 (() => {
@@ -46,11 +47,10 @@ import { NostrLoginOptions, StartScreens } from './types';
 
       const methods = cs.getAttribute('data-methods');
       if (methods) {
-        // @ts-ignore
         options.methods = methods
           .trim()
           .split(',')
-          .filter(m => !!m);
+          .filter(m => !!m) as AuthMethod[];
       }
 
       const title = cs.getAttribute('data-title');

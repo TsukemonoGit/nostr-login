@@ -110,7 +110,6 @@ export class NostrLoginInitializer {
     });
 
     this.bannerManager.on('onConfirmLogout', async () => {
-      // @ts-ignore
       this.launch('confirm-logout');
     });
 
@@ -258,9 +257,7 @@ export class NostrLoginInitializer {
     this.extensionService.startCheckingExtension(this.nostr);
 
     // set ourselves as nostr
-
-    // @ts-ignore
-    window.nostr = this.nostr;
+    (window as any).nostr = this.nostr;
 
     // connect launching of our modals to nl-button elements
     this.modalManager.connectModals(opt);

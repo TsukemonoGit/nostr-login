@@ -1,6 +1,9 @@
 import { Nostr, NostrParams } from './';
 import { EventEmitter } from 'tseep';
 
+/** window.nostr (NIP-07) の型安全なアクセサ */
+const win = window as Record<string, any>;
+
 class NostrExtensionService extends EventEmitter {
   private params: NostrParams;
   private nostrExtension: any | undefined;
@@ -20,8 +23,7 @@ class NostrExtensionService extends EventEmitter {
   }
 
   private checkExtension(nostr: Nostr) {
-    // @ts-ignore
-    if (!this.nostrExtension && window.nostr && window.nostr !== nostr) {
+    if (!this.nostrExtension && win.nostr && win.nostr !== nostr) {
       this.initExtension(nostr);
       return true;
     }
@@ -29,10 +31,8 @@ class NostrExtensionService extends EventEmitter {
   }
 
   private async initExtension(nostr: Nostr, lastTry?: boolean) {
-    // @ts-ignore
-    this.nostrExtension = window.nostr;
-    // @ts-ignore
-    window.nostr = nostr;
+    this.nostrExtension = win.nostr;
+    win.nostr = nostr;
     // we're signed in with extesions? well execute that
     if (this.params.userInfo?.authMethod === 'extension') {
       await this.trySetExtensionForPubkey(this.params.userInfo.pubkey);
@@ -48,8 +48,7 @@ class NostrExtensionService extends EventEmitter {
         // extension started then the rest are likely to start soon,
         // and then just capture the most recent one
 
-        // @ts-ignore
-        if (window.nostr !== nostr && this.nostrExtension !== window.nostr) {
+        if (win.nostr !== nostr && this.nostrExtension !== win.nostr) {
           this.initExtension(nostr, true);
         }
       }, 300);
@@ -60,10 +59,8 @@ class NostrExtensionService extends EventEmitter {
   }
 
   private async setExtensionReadPubkey(expectedPubkey?: string) {
-    // @ts-ignore
-    window.nostr = this.nostrExtension;
-    // @ts-ignore
-    const pubkey = await window.nostr.getPublicKey();
+    win.nostr = this.nostrExtension;
+    const pubkey = await win.nostr.getPublicKey();
     if (expectedPubkey && expectedPubkey !== pubkey) {
       this.emit('extensionLogout');
     } else {
@@ -82,10 +79,8 @@ class NostrExtensionService extends EventEmitter {
   }
 
   public unsetExtension(nostr: Nostr) {
-    // @ts-ignore
-    if (window.nostr === this.nostrExtension) {
-      // @ts-ignore
-      window.nostr = nostr;
+    if (win.nostr === this.nostrExtension) {
+      win.nostr = nostr;
     }
   }
 

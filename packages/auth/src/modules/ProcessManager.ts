@@ -88,8 +88,7 @@ class ProcessManager extends EventEmitter {
 
     // we can't return undefined bcs an exception is
     // thrown above on error
-    // @ts-ignore
-    return result;
+    return result as T;
   }
 }
 

@@ -10,52 +10,11 @@ import { NostrParams } from './';
 import { EventEmitter } from 'tseep';
 import { Signer } from './Nostr';
 import { Nip44 } from '../utils/nip44';
-import { IframeNostrRpc, Nip46Signer, Nip46Error, ReadyListener, RelayPool, RpcResponse } from './Nip46';
+import { IframeNostrRpc, Nip46Signer, Nip46Error, ReadyListener, RelayPool, RpcResponse } from './nip46';
 import { PrivateKeySigner } from './Signer';
-import { DEFAULT_NIP46_RELAYS } from '../const';
-
-const OUTBOX_RELAYS = ['wss://user.kindpag.es', 'wss://purplepag.es', 'wss://relay.nos.social'];
-
-const NOSTRCONNECT_APPS: ConnectionString[] = [
-  {
-    name: 'Nsec.app',
-    domain: 'nsec.app',
-    canImport: true,
-    img: 'https://nsec.app/assets/favicon.ico',
-    link: 'https://use.nsec.app/<nostrconnect>',
-  },
-  {
-    name: 'Amber',
-    img: 'https://raw.githubusercontent.com/greenart7c3/Amber/refs/heads/master/assets/android-icon.svg',
-    link: '<nostrconnect>',
-  },
-  {
-    name: 'Other key stores',
-    img: '',
-    link: '<nostrconnect>',
-  },
-];
-
-// Cache for nostr.json results per domain
-const nostrJsonCache: Map<string, { data: any; timestamp: number }> = new Map();
-const NOSTR_JSON_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
-const NOSTR_JSON_FETCH_TIMEOUT = 5000; // 5 seconds
-
-async function fetchNostrJson(domain: string): Promise<any> {
-  const cached = nostrJsonCache.get(domain);
-  if (cached && Date.now() - cached.timestamp < NOSTR_JSON_CACHE_TTL) {
-    return cached.data;
-  }
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), NOSTR_JSON_FETCH_TIMEOUT);
-  try {
-    const info = await (await fetch(`https://${domain}/.well-known/nostr.json`, { signal: controller.signal })).json();
-    nostrJsonCache.set(domain, { data: info, timestamp: Date.now() });
-    return info;
-  } finally {
-    clearTimeout(timer);
-  }
-}
+import { DEFAULT_NIP46_RELAYS, OUTBOX_RELAYS, NOSTRCONNECT_APPS } from '../const';
+import { fetchNostrJson } from '../utils/nostrJson';
+import { RelayHealthManager } from './RelayHealthManager';
 
 /** hex 文字列の秘密鍵を生成する (nostr-tools v2 互換) */
 function generatePrivateKey(): string {
@@ -77,6 +36,7 @@ class AuthNostrService extends EventEmitter implements Signer {
   private nostrConnectSecret: string = '';
   private iframe?: HTMLIFrameElement;
   private starterReady?: ReadyListener;
+  private relayHealth: RelayHealthManager;
 
   nip04: {
     encrypt: (pubkey: string, plaintext: string) => Promise<string>;
@@ -107,6 +67,12 @@ class AuthNostrService extends EventEmitter implements Signer {
       encrypt: this.encrypt44.bind(this),
       decrypt: this.decrypt44.bind(this),
     };
+
+    this.relayHealth = new RelayHealthManager({
+      pool: this.pool,
+      getRpc: () => this.signer?.rpc ?? null,
+      getUserInfo: () => this.params.userInfo,
+    });
   }
 
   public isIframe() {
@@ -234,7 +200,7 @@ class AuthNostrService extends EventEmitter implements Signer {
 
   public async createNostrConnect() {
     this.nostrConnectKey = generatePrivateKey();
-    this.nostrConnectSecret = Math.random().toString(36).substring(7);
+    this.nostrConnectSecret = Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('');
 
     const pubkey = getPublicKey(hexToBytes(this.nostrConnectKey));
     const meta = {
@@ -791,77 +757,28 @@ class AuthNostrService extends EventEmitter implements Signer {
 
   /**
    * 強制的にリレーに再接続し、subscriptionを再開する。
-   * RelayPool の自動再接続 Observable と waitForConnection() に委譲。
+   * RelayHealthManager に委譲。
    */
   private async forceReconnect() {
-    console.log('forceReconnect: forcing relay reconnection...');
-
-    this.ensureRelaysInPool();
-
-    // 全リレーに対して reconnect を試行
-    for (const url of this.pool.relayUrls) {
-      try {
-        this.pool.reconnect(url);
-      } catch (e) {
-        console.warn('forceReconnect: failed to reconnect', url, e);
-      }
-    }
-
-    await this.pool.waitForConnection(8000);
-    await this.ensureSubscription();
+    return this.relayHealth.forceReconnect();
   }
 
   private async ensureRelayConnection() {
-    this.ensureRelaysInPool();
-
-    const isRelayConnected = this.pool.isAnyConnected();
-    const isSubActive = this.signer?.rpc ? (this.signer.rpc as any).isSubscriptionActive?.() !== false : true;
-
-    if (!isRelayConnected) {
-      console.log('ensureRelayConnection: no relay connected, triggering reconnect...');
-
-      // 全リレーに reconnect を試行し、接続をリアクティブに待つ
-      for (const url of this.pool.relayUrls) {
-        try {
-          this.pool.reconnect(url);
-        } catch (e) {
-          console.warn('ensureRelayConnection: reconnect failed', url, e);
-        }
-      }
-
-      await this.pool.waitForConnection(8000);
-      await this.ensureSubscription();
-    } else if (!isSubActive) {
-      console.log('ensureRelayConnection: relay connected but subscription dead, resubscribing...');
-      await this.ensureSubscription();
-    }
+    return this.relayHealth.ensureRelayConnection();
   }
 
   /**
    * リレープールが空なら保存済みリレーまたはデフォルトリレーを追加する
    */
   private ensureRelaysInPool() {
-    if (this.pool.relayUrls.length === 0) {
-      console.warn('ensureRelaysInPool: no relays in pool, adding relays');
-      const relays = this.params.userInfo?.relays?.length ? this.params.userInfo.relays : DEFAULT_NIP46_RELAYS;
-      for (const r of relays) {
-        this.pool.addRelay(r);
-      }
-    }
+    this.relayHealth.ensureRelaysInPool();
   }
 
   /**
    * subscriptionを再開する。
    */
   private async ensureSubscription() {
-    if (this.signer && this.signer.rpc) {
-      try {
-        (this.signer.rpc as any).resubscribe?.();
-        console.log('ensureSubscription: subscription re-established');
-      } catch (e) {
-        console.warn('ensureSubscription: failed to resubscribe', e);
-      }
-    }
+    this.relayHealth.ensureSubscription();
   }
 
   private async codec_call(method: string, pubkey: string, param: string) {

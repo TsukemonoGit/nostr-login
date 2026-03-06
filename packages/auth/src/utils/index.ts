@@ -2,14 +2,13 @@ import { Info, RecentType } from '@konemono/nostr-login-components/dist/types/ty
 import { generateSecretKey, finalizeEvent } from 'nostr-tools';
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils';
 import { NostrLoginOptions } from '../types';
-import { RelayPool } from '../modules/Nip46';
+import { RelayPool } from '../modules/nip46';
 import { PrivateKeySigner } from '../modules/Signer';
 
 const LOCAL_STORE_KEY = '__nostrlogin_nip46';
 const LOGGED_IN_ACCOUNTS = '__nostrlogin_accounts';
 const RECENT_ACCOUNTS = '__nostrlogin_recent';
-const OUTBOX_RELAYS = ['wss://purplepag.es', 'wss://relay.nos.social', 'wss://user.kindpag.es', 'wss://relay.damus.io', 'wss://nos.lol'];
-const DEFAULT_SIGNUP_RELAYS = ['wss://relay.damus.io/', 'wss://nos.lol/', 'wss://relay.primal.net/'];
+import { OUTBOX_RELAYS, DEFAULT_SIGNUP_RELAYS } from '../const';
 
 export const localStorageSetItem = (key: string, value: string) => {
   localStorage.setItem(key, value);
@@ -269,10 +268,8 @@ export const localStorageRemoveCurrentAccount = () => {
   const recentUser: RecentType = { ...user };
 
   // make sure session keys are dropped
-  // @ts-ignore
-  delete recentUser['sk'];
-  // @ts-ignore
-  delete recentUser['otpData'];
+  delete (recentUser as Record<string, unknown>)['sk'];
+  delete (recentUser as Record<string, unknown>)['otpData'];
 
   // get accounts and recent
   const loggedInAccounts: Info[] = localStorageGetItem(LOGGED_IN_ACCOUNTS) || [];

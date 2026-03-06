@@ -154,8 +154,9 @@ class ModalManager extends EventEmitter {
           // this.modal.isLoadingExtension = false;
 
           // drop it
-          // @ts-ignore
-          document.body.removeChild(this.modal.parentNode);
+          if (this.modal?.parentNode) {
+            document.body.removeChild(this.modal.parentNode);
+          }
           this.modal = null;
         }
       });
@@ -364,7 +365,7 @@ class ModalManager extends EventEmitter {
 
       if (!this.modal) throw new Error('WTH?');
 
-      this.modal.addEventListener('handleContinue', () => {
+      this.modal.addEventListener('nlContinue', () => {
         if (this.modal) {
           this.modal.isLoading = true;
           this.emit('onAuthUrlClick', this.modal.authUrl);
@@ -427,7 +428,7 @@ class ModalManager extends EventEmitter {
         exportKeys();
       });
 
-      this.modal.addEventListener('handleLogoutBanner', () => {
+      this.modal.addEventListener('nlLogoutBanner', () => {
         this.emit('onLogoutBanner');
       });
 
@@ -616,7 +617,7 @@ class ModalManager extends EventEmitter {
         dialog.close();
         err(new Error('Cancelled'));
       };
-      this.modal.addEventListener('stopFetchHandler', cancel);
+      this.modal.addEventListener('nlStopFetch', cancel);
       this.modal.addEventListener('nlCloseModal', cancel);
 
       this.modal.addEventListener('nlChangeDarkMode', (event: any) => {

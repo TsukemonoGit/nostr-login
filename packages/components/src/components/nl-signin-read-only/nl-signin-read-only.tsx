@@ -39,6 +39,7 @@ export class NlSigninReadOnly {
               type="text"
               class="nl-input peer py-3 px-4 ps-11 block w-full border-transparent rounded-lg text-sm disabled:opacity-50 disabled:pointer-events-none dark:border-transparent"
               placeholder="npub or name@domain"
+              aria-label="Public key or Nostr address"
               value={state.nlSigninReadOnly.loginName}
             />
             <div class="absolute inset-y-0 start-0 flex items-center pointer-events-none ps-4 peer-disabled:opacity-50 peer-disabled:pointer-events-none">

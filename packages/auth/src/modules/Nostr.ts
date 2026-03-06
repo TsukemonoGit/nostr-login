@@ -72,8 +72,7 @@ class Nostr {
     }
   }
 
-  // @ts-ignore
-  async signEvent(event) {
+  async signEvent(event: { kind: number; created_at: number; tags: string[][]; content: string }) {
     await this.ensureAuth();
     return this.#params.wait(async () => await this.#params.getSigner().signEvent(event));
   }

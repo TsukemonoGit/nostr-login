@@ -88,9 +88,10 @@ export class NlNip46RelaySettings {
                 type="text"
                 class="flex-1 text-xs px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                 placeholder="wss://relay.example.com"
+                aria-label="Relay URL"
                 value={this.newRelay}
                 onInput={e => (this.newRelay = (e.target as HTMLInputElement).value)}
-                onKeyPress={e => {
+                onKeyDown={e => {
                   if (e.key === 'Enter') {
                     e.preventDefault();
                     this.addRelay();

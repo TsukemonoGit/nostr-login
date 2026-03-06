@@ -13,8 +13,8 @@ export class NLChangeAccount {
   @Prop() currentAccount: Info = null;
 
   @Element() element: HTMLElement;
-  @Event() handleOpenWelcomeModal: EventEmitter<string>;
-  @Event() handleSwitchAccount: EventEmitter<Info>;
+  @Event() nlOpenWelcomeModal: EventEmitter<string>;
+  @Event() nlSwitchAccount: EventEmitter<Info>;
 
   buttonRef: HTMLButtonElement;
   ulRef: HTMLUListElement;
@@ -64,11 +64,11 @@ export class NLChangeAccount {
   }
 
   handleChange(el: Info) {
-    this.handleSwitchAccount.emit(el);
+    this.nlSwitchAccount.emit(el);
   }
 
   handleOpenModal() {
-    this.handleOpenWelcomeModal.emit();
+    this.nlOpenWelcomeModal.emit();
   }
 
   render() {

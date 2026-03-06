@@ -8,14 +8,14 @@ import { state } from '@/store';
   shadow: false,
 })
 export class NlConfirmLogout {
-  @Prop() titleModal = "Delete keys?";
-  @Prop() description = "Your profile keys are stored in this browser tab and will be deleted if you log out, and your profile will be inaccessible.";
-  @Event() handleLogoutBanner: EventEmitter<string>;
-  @Event() handleBackUpModal: EventEmitter<string>;
+  @Prop() titleModal = 'Delete keys?';
+  @Prop() description = 'Your profile keys are stored in this browser tab and will be deleted if you log out, and your profile will be inaccessible.';
+  @Event() nlLogoutBanner: EventEmitter<string>;
+  @Event() nlBackUpModal: EventEmitter<string>;
   @Event() nlCloseModal: EventEmitter;
 
   handleLogout() {
-    this.handleLogoutBanner.emit(METHOD_MODULE.LOGOUT);
+    this.nlLogoutBanner.emit(METHOD_MODULE.LOGOUT);
     this.nlCloseModal.emit();
   }
 

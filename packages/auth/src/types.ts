@@ -18,13 +18,15 @@ export type StartScreens =
   | 'signup'
   | 'local-signup'
   | 'login'
+  | 'login-nsec'
   | 'otp'
   | 'connect'
   | 'login-bunker-url'
   | 'login-read-only'
   | 'connection-string'
   | 'switch-account'
-  | 'import';
+  | 'import'
+  | 'confirm-logout';
 
 export interface NostrLoginOptions {
   // optional

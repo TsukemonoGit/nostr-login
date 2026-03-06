@@ -3,7 +3,7 @@ import { NostrParams } from '.';
 import { Info } from '@konemono/nostr-login-components/dist/types/types';
 import { EventEmitter } from 'tseep';
 import { getDarkMode } from '../utils';
-import { ReadyListener } from './Nip46';
+import { ReadyListener } from './nip46';
 
 class BannerManager extends EventEmitter {
   private banner: TypeBanner | null = null;
@@ -89,35 +89,35 @@ class BannerManager extends EventEmitter {
     if (opt.theme) this.banner.setAttribute('theme', opt.theme);
     if (opt.noBanner) this.banner.setAttribute('hidden-mode', 'true');
 
-    this.banner.addEventListener('handleLoginBanner', (event: any) => {
+    this.banner.addEventListener('nlLoginBanner', (event: any) => {
       this.emit('launch', event.detail);
     });
 
-    this.banner.addEventListener('handleConfirmLogout', () => {
+    this.banner.addEventListener('nlConfirmLogout', () => {
       this.emit('onConfirmLogout');
     });
 
-    this.banner.addEventListener('handleLogoutBanner', async () => {
+    this.banner.addEventListener('nlLogoutBanner', async () => {
       this.emit('logout');
     });
 
-    this.banner.addEventListener('handleImportModal', (event: any) => {
+    this.banner.addEventListener('nlImportModal', (event: any) => {
       this.emit('import');
     });
 
-    this.banner.addEventListener('handleNotifyConfirmBanner', (event: any) => {
+    this.banner.addEventListener('nlNotifyConfirmBanner', (event: any) => {
       this.emit('onAuthUrlClick', event.detail);
     });
 
-    this.banner.addEventListener('handleNotifyConfirmBannerIframe', (event: any) => {
+    this.banner.addEventListener('nlNotifyConfirmBannerIframe', (event: any) => {
       this.emit('onIframeAuthUrlClick', event.detail);
     });
 
-    this.banner.addEventListener('handleSwitchAccount', (event: any) => {
+    this.banner.addEventListener('nlSwitchAccount', (event: any) => {
       this.emit('onSwitchAccount', event.detail);
     });
 
-    this.banner.addEventListener('handleOpenWelcomeModal', () => {
+    this.banner.addEventListener('nlOpenWelcomeModal', () => {
       this.emit('launch');
 
       if (this.banner) {
@@ -125,7 +125,7 @@ class BannerManager extends EventEmitter {
       }
     });
 
-    this.banner.addEventListener('handleCancelTimeout', () => {
+    this.banner.addEventListener('nlCancelTimeout', () => {
       this.emit('cancelTimeout');
     });
 

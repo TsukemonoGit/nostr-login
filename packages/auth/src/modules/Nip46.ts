@@ -472,7 +472,7 @@ class NostrRpc extends EventEmitter {
   }
 
   protected getId(): string {
-    return Math.random().toString(36).substring(7);
+    return Array.from(crypto.getRandomValues(new Uint8Array(8)), b => b.toString(16).padStart(2, '0')).join('');
   }
 
   public async sendRequest(remotePubkey: string, method: string, params: string[] = [], kind = 24133, cb?: (res: RpcResponse) => void): Promise<RpcResponse> {
@@ -485,8 +485,7 @@ class NostrRpc extends EventEmitter {
 
     await this.pool.publish(event);
 
-    // @ts-ignore
-    return undefined as RpcResponse;
+    return undefined as unknown as RpcResponse;
   }
 
   protected setResponseHandler(id: string, cb?: (res: RpcResponse) => void) {
@@ -641,8 +640,7 @@ export class IframeNostrRpc extends NostrRpc {
       await this.pool.publish(event);
     }
 
-    // @ts-ignore
-    return undefined as RpcResponse;
+    return undefined as unknown as RpcResponse;
   }
 
   public override stop() {
