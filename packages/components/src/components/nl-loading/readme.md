@@ -12,10 +12,10 @@
 
 ## Events
 
-| Event              | Description | Type                   |
-| ------------------ | ----------- | ---------------------- |
-| `handleContinue`   |             | `CustomEvent<boolean>` |
-| `stopFetchHandler` |             | `CustomEvent<boolean>` |
+| Event         | Description | Type                   |
+| ------------- | ----------- | ---------------------- |
+| `nlContinue`  |             | `CustomEvent<boolean>` |
+| `nlStopFetch` |             | `CustomEvent<boolean>` |
 
 
 ## Dependencies

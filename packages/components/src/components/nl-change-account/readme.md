@@ -15,10 +15,10 @@
 
 ## Events
 
-| Event                    | Description | Type                  |
-| ------------------------ | ----------- | --------------------- |
-| `handleOpenWelcomeModal` |             | `CustomEvent<string>` |
-| `handleSwitchAccount`    |             | `CustomEvent<Info>`   |
+| Event                | Description | Type                  |
+| -------------------- | ----------- | --------------------- |
+| `nlOpenWelcomeModal` |             | `CustomEvent<string>` |
+| `nlSwitchAccount`    |             | `CustomEvent<Info>`   |
 
 
 ## Dependencies

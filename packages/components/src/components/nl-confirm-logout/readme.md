@@ -7,17 +7,17 @@
 
 | Property      | Attribute     | Description | Type     | Default                                                                                                                         |
 | ------------- | ------------- | ----------- | -------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `description` | `description` |             | `string` | `"Your profile keys are stored in this browser tab and will be deleted if you log out, and your profile will be inaccessible."` |
-| `titleModal`  | `title-modal` |             | `string` | `"Delete keys?"`                                                                                                                |
+| `description` | `description` |             | `string` | `'Your profile keys are stored in this browser tab and will be deleted if you log out, and your profile will be inaccessible.'` |
+| `titleModal`  | `title-modal` |             | `string` | `'Delete keys?'`                                                                                                                |
 
 
 ## Events
 
-| Event                | Description | Type                  |
-| -------------------- | ----------- | --------------------- |
-| `handleBackUpModal`  |             | `CustomEvent<string>` |
-| `handleLogoutBanner` |             | `CustomEvent<string>` |
-| `nlCloseModal`       |             | `CustomEvent<any>`    |
+| Event            | Description | Type                  |
+| ---------------- | ----------- | --------------------- |
+| `nlBackUpModal`  |             | `CustomEvent<string>` |
+| `nlCloseModal`   |             | `CustomEvent<any>`    |
+| `nlLogoutBanner` |             | `CustomEvent<string>` |
 
 
 ## Dependencies

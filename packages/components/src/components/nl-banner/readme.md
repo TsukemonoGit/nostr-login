@@ -20,16 +20,16 @@
 
 ## Events
 
-| Event                             | Description | Type                  |
-| --------------------------------- | ----------- | --------------------- |
-| `handleCancelTimeout`             |             | `CustomEvent<void>`   |
-| `handleConfirmLogout`             |             | `CustomEvent<string>` |
-| `handleImportModal`               |             | `CustomEvent<string>` |
-| `handleLoginBanner`               |             | `CustomEvent<string>` |
-| `handleLogoutBanner`              |             | `CustomEvent<string>` |
-| `handleNotifyConfirmBanner`       |             | `CustomEvent<string>` |
-| `handleNotifyConfirmBannerIframe` |             | `CustomEvent<string>` |
-| `handleOpenWelcomeModal`          |             | `CustomEvent<string>` |
+| Event                         | Description | Type                  |
+| ----------------------------- | ----------- | --------------------- |
+| `nlCancelTimeout`             |             | `CustomEvent<void>`   |
+| `nlConfirmLogout`             |             | `CustomEvent<string>` |
+| `nlImportModal`               |             | `CustomEvent<string>` |
+| `nlLoginBanner`               |             | `CustomEvent<string>` |
+| `nlLogoutBanner`              |             | `CustomEvent<string>` |
+| `nlNotifyConfirmBanner`       |             | `CustomEvent<string>` |
+| `nlNotifyConfirmBannerIframe` |             | `CustomEvent<string>` |
+| `nlOpenWelcomeModal`          |             | `CustomEvent<string>` |
 
 
 ## Dependencies

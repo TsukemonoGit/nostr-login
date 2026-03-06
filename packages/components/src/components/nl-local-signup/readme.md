@@ -17,7 +17,7 @@
 
 | Event           | Description | Type                   |
 | --------------- | ----------- | ---------------------- |
-| `fetchHandler`  |             | `CustomEvent<boolean>` |
+| `nlFetchStatus` |             | `CustomEvent<boolean>` |
 | `nlLocalSignup` |             | `CustomEvent<string>`  |
 | `nlSignupNjump` |             | `CustomEvent<void>`    |
 
