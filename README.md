@@ -1,6 +1,6 @@
 ## 🔀 このフォークについて
 
-このリポジトリは [nostr-protocol/nostr-login](https://github.com/nostr-protocol/nostr-login) のフォークです。
+このリポジトリは [nostrband/nostr-login](https://github.com/nostrband/nostr-login) のフォークです。
 元リポジトリに対し、以下の機能を追加・改善しています：
 
 | 機能                            | 説明                                                                                                                                            |
