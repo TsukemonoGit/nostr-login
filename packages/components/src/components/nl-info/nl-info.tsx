@@ -19,22 +19,27 @@ export class NlInfo {
         <h1 class="nl-title font-bold text-center text-4xl">
           Nostr <span class="font-light">Login</span>
         </h1>
-        <p class="text-green-800 dark:text-green-200 font-light text-center text-lg pt-2 max-w-96 mx-auto">Version: 1.7.11</p>
+        <p class="text-green-800 dark:text-green-200 font-light text-center text-lg pt-2 max-w-96 mx-auto">Version: 1.15.3</p>
         <p class="nl-description font-light text-center text-lg pt-2 max-w-96 mx-auto">
           Learn more about Nostr{' '}
           <a target="_blank" href="https://nostr.how">
             here
           </a>
           .<br />
-          This is an{' '}
+          This is a{' '}
           <a target="_blank" href="https://github.com/nostrband/nostr-login">
-            open-source
+            fork
           </a>{' '}
-          tool by{' '}
+          of{' '}
           <a target="_blank" href="https://nostr.band">
             Nostr.Band
           </a>
-          .
+          's open-source tool.
+          <br />
+          Source:{' '}
+          <a target="_blank" href="https://github.com/nicofighter45/nostr-login">
+            nicofighter45/nostr-login
+          </a>
         </p>
       </div>
     );

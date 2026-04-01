@@ -28,8 +28,8 @@ export class RelayPool {
         verifier,
         connectionStrategy: 'lazy-keep',
         retry: { strategy: 'exponential', maxCount: 5, initialDelay: 1000 },
-        eoseTimeout: 10000,
-        okTimeout: 10000,
+        eoseTimeout: 5000,
+        okTimeout: 5000,
         skipFetchNip11: true,
       });
       this._owned = true;
@@ -77,7 +77,7 @@ export class RelayPool {
    * 互換のため明示的に接続状態を待機する。
    * createConnectionStateObservable() でリアクティブに接続完了を検知する。
    */
-  async connect(timeoutMs = 10000): Promise<void> {
+  async connect(timeoutMs = 5000): Promise<void> {
     this._syncRelays();
     if (this.isAnyConnected()) return;
 

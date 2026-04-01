@@ -81,6 +81,18 @@ class BannerManager extends EventEmitter {
     if (this.banner) this.banner.darkMode = dark;
   }
 
+  public setBannerVisible(visible: boolean) {
+    if (this.banner) {
+      if (visible) {
+        this.banner.removeAttribute('hidden-mode');
+        (this.banner as any).hiddenMode = false;
+      } else {
+        this.banner.setAttribute('hidden-mode', 'true');
+        (this.banner as any).hiddenMode = true;
+      }
+    }
+  }
+
   public launchAuthBanner(opt: NostrLoginOptions) {
     this.banner = document.createElement('nl-banner');
 
@@ -88,6 +100,7 @@ class BannerManager extends EventEmitter {
 
     if (opt.theme) this.banner.setAttribute('theme', opt.theme);
     if (opt.noBanner) this.banner.setAttribute('hidden-mode', 'true');
+    if (opt.bannerPosition) this.banner.setAttribute('banner-position', opt.bannerPosition);
 
     this.banner.addEventListener('nlLoginBanner', (event: any) => {
       this.emit('launch', event.detail);

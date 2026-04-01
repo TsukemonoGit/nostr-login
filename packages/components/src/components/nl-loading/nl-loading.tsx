@@ -75,6 +75,7 @@ export class NlLoading {
         )}
         {showButton && (
           <div class="mt-3 ml-auto mr-auto w-72">
+            {state.isLoading && !state.authUrl && <p class="nl-description font-light text-center text-xs mb-2 opacity-60">Press Cancel to abort</p>}
             <button-base
               onClick={e => {
                 if (state.authUrl && !state.isLoading) {

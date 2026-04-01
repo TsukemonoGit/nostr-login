@@ -37,7 +37,7 @@ export class RelayHealthManager {
       }
     }
 
-    await this.ctx.pool.waitForConnection(8000);
+    await this.ctx.pool.waitForConnection(5000);
     this.ensureSubscription();
   }
 
@@ -62,7 +62,7 @@ export class RelayHealthManager {
         }
       }
 
-      await this.ctx.pool.waitForConnection(8000);
+      await this.ctx.pool.waitForConnection(5000);
       this.ensureSubscription();
     } else if (!isSubActive) {
       console.log('ensureRelayConnection: relay connected but subscription dead, resubscribing...');

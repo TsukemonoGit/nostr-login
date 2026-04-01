@@ -14,6 +14,10 @@
 | **ダイアログ閉じ時の安定性**    | ログイン済みでダイアログを開閉しても signer が破壊されないように修正                                                                            |
 | **安定性改善**                  | 無限ローディング問題の解消、タイムアウト管理、キャンセル機能                                                                                    |
 | **nsec ログイン**               | 外部で作成した秘密鍵（nsec）を直接入力してログイン可能                                                                                          |
+| **バナー位置調整**              | バナーの表示位置を `top` / `center` / `bottom` から選択可能                                                                                     |
+| **バナー動的表示切替**          | `setBannerVisible()` で初期化後もバナーの表示/非表示を動的に切り替え可能                                                                        |
+| **NIP-46 エラーメッセージ改善** | リレー接続不可・署名機応答なし等のエラーをユーザーフレンドリーなメッセージで表示                                                                |
+| **タイムアウト短縮**            | リレー接続待機を10秒→5秒に短縮し、キャンセル可能であることをヒント表示                                                                          |
 
 ### インストール
 
@@ -78,14 +82,15 @@ useEffect(() => {
 
 ## API
 
-| 関数                    | 説明                                       |
-| ----------------------- | ------------------------------------------ |
-| `init(opts)`            | `window.nostr` を nostr-login にマッピング |
-| `launch(opts)`          | 認証UIを表示                               |
-| `logout()`              | 現在のNIP-46接続を切断しログアウト         |
-| `setDarkMode(dark)`     | ダークモードの切り替え                     |
-| `setAuth(method, info)` | プログラマティックにログイン/ログアウト    |
-| `cancelNeedAuth()`      | Nostr Connect フローのキャンセル           |
+| 関数                        | 説明                                       |
+| --------------------------- | ------------------------------------------ |
+| `init(opts)`                | `window.nostr` を nostr-login にマッピング |
+| `launch(opts)`              | 認証UIを表示                               |
+| `logout()`                  | 現在のNIP-46接続を切断しログアウト         |
+| `setDarkMode(dark)`         | ダークモードの切り替え                     |
+| `setBannerVisible(visible)` | バナーの表示/非表示を動的に切り替え        |
+| `setAuth(method, info)`     | プログラマティックにログイン/ログアウト    |
+| `cancelNeedAuth()`          | Nostr Connect フローのキャンセル           |
 
 ---
 
@@ -101,6 +106,7 @@ useEffect(() => {
 | `perms`                   | `data-perms`                | リクエストする[パーミッション](https://github.com/nostr-protocol/nips/blob/master/46.md#requested-permissions)（カンマ区切り） 例: `sign_event:1,nip04_encrypt` |
 | `startScreen`             | `data-start-screen`         | 起動時の画面（下記参照）                                                                                                                                        |
 | `noBanner`                | `data-no-banner`            | `true` でバナーを非表示にする（イベントディスパッチで手動起動）                                                                                                 |
+| `bannerPosition`          | `data-banner-position`      | バナーの表示位置: `top`, `center`（デフォルト）, `bottom`                                                                                                       |
 | `methods`                 | `data-methods`              | 許可する認証方法（カンマ区切り）: `connect`, `extension`, `readOnly`, `local`, `nsec`                                                                           |
 | `title`                   | `data-title`                | ウェルカム画面のタイトル                                                                                                                                        |
 | `description`             | `data-description`          | ウェルカム画面の説明文                                                                                                                                          |
@@ -184,6 +190,24 @@ bunker URL 入力画面で **Scan QR Code** ボタンからカメラを起動し
 ### NIP-46 署名の自動リトライ
 
 リレー切断やタイムアウトで署名が失敗した場合、最大3回まで自動リトライします。リトライ前にリレーの強制再接続とsubscriptionの再開を行います。ユーザーによる明示的な拒否やキャンセル時はリトライしません。
+
+### タイムアウト設計
+
+各フェーズで異なるタイムアウトを設定しています。
+
+| フェーズ | タイムアウト | 定数 / 箇所 | 説明 |
+|---|---|---|---|
+| リレー接続待ち | **5秒** | `RelayPool.connect()` / `RelayHealthManager` | リレーへの WebSocket 接続確立を待つ時間 |
+| EOSE / OK 待ち | **5秒** | `eoseTimeout` / `okTimeout` (rx-nostr) | リレーからの EOSE・OK メッセージの待機 |
+| バナー通知表示 | **5秒** | `CALL_TIMEOUT` | 署名開始からバナーにローディング通知を出すまで |
+| NIP-46 RPC リクエスト | **30秒** | `NIP46_REQUEST_TIMEOUT` | 署名機への署名・暗号化リクエストの応答待ち |
+| auth_url 受信後 | **120秒** | `NIP46_REQUEST_TIMEOUT × 4` | ユーザーが署名機アプリで操作する時間 |
+| 初回接続（listen） | **60秒** | `NostrRpc.listen()` | Nostr Connect 初回接続の確立待ち |
+| connect リクエスト | **30秒** | `NostrRpc.connect()` | connect メソッドの応答待ち |
+| エラーリレー自動再接続 | **30秒** | `RelayPool` (delay) | リトライ上限到達後の自動再接続までの待機 |
+| auth_url 後のバナー通知 | **120秒** | `AUTH_URL_CALL_TIMEOUT` | auth_url 受信後のバナータイムアウト通知延長 |
+
+> 定数は `packages/auth/src/const/index.ts` で一元管理しています。
 
 ### subscription の再開改善
 

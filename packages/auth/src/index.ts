@@ -305,6 +305,10 @@ export class NostrLoginInitializer {
     this.modalManager.onDarkMode(dark);
   };
 
+  public setBannerVisible = (visible: boolean) => {
+    this.bannerManager.setBannerVisible(visible);
+  };
+
   public setAuth = async (o: NostrLoginAuthOptions) => {
     if (!o.type) throw new Error('Invalid auth event');
     if (o.type !== 'login' && o.type !== 'logout' && o.type !== 'signup') throw new Error('Invalid auth event');
@@ -335,7 +339,7 @@ export class NostrLoginInitializer {
 
 const initializer = new NostrLoginInitializer();
 
-export const { init, launch, logout, setDarkMode, setAuth, cancelNeedAuth } = initializer;
+export const { init, launch, logout, setDarkMode, setBannerVisible, setAuth, cancelNeedAuth } = initializer;
 
 document.addEventListener('nlLogout', logout);
 document.addEventListener('nlLaunch', (event: any) => {

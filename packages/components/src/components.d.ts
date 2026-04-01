@@ -42,6 +42,7 @@ export namespace Components {
     }
     interface NlBanner {
         "accounts": Info[];
+        "bannerPosition": 'top' | 'center' | 'bottom';
         "darkMode": boolean;
         "hiddenMode": boolean;
         "isLoading": boolean;
@@ -755,6 +756,7 @@ declare namespace LocalJSX {
     }
     interface NlBanner {
         "accounts"?: Info[];
+        "bannerPosition"?: 'top' | 'center' | 'bottom';
         "darkMode"?: boolean;
         "hiddenMode"?: boolean;
         "isLoading"?: boolean;

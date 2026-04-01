@@ -5,17 +5,18 @@
 
 ## Properties
 
-| Property      | Attribute      | Description | Type                                                       | Default     |
-| ------------- | -------------- | ----------- | ---------------------------------------------------------- | ----------- |
-| `accounts`    | --             |             | `Info[]`                                                   | `[]`        |
-| `darkMode`    | `dark-mode`    |             | `boolean`                                                  | `false`     |
-| `hiddenMode`  | `hidden-mode`  |             | `boolean`                                                  | `false`     |
-| `isLoading`   | `is-loading`   |             | `boolean`                                                  | `false`     |
-| `isOpen`      | `is-open`      |             | `boolean`                                                  | `false`     |
-| `notify`      | --             |             | `BannerNotify`                                             | `null`      |
-| `theme`       | `theme`        |             | `"crab" \| "default" \| "lemonade" \| "ocean" \| "purple"` | `'default'` |
-| `titleBanner` | `title-banner` |             | `string`                                                   | `''`        |
-| `userInfo`    | --             |             | `Info`                                                     | `null`      |
+| Property         | Attribute         | Description | Type                                                       | Default     |
+| ---------------- | ----------------- | ----------- | ---------------------------------------------------------- | ----------- |
+| `accounts`       | --                |             | `Info[]`                                                   | `[]`        |
+| `bannerPosition` | `banner-position` |             | `"bottom" \| "center" \| "top"`                            | `'center'`  |
+| `darkMode`       | `dark-mode`       |             | `boolean`                                                  | `false`     |
+| `hiddenMode`     | `hidden-mode`     |             | `boolean`                                                  | `false`     |
+| `isLoading`      | `is-loading`      |             | `boolean`                                                  | `false`     |
+| `isOpen`         | `is-open`         |             | `boolean`                                                  | `false`     |
+| `notify`         | --                |             | `BannerNotify`                                             | `null`      |
+| `theme`          | `theme`           |             | `"crab" \| "default" \| "lemonade" \| "ocean" \| "purple"` | `'default'` |
+| `titleBanner`    | `title-banner`    |             | `string`                                                   | `''`        |
+| `userInfo`       | --                |             | `Info`                                                     | `null`      |
 
 
 ## Events

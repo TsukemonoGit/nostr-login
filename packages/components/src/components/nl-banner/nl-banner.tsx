@@ -12,6 +12,7 @@ export class NlBanner {
   @Prop({ mutable: true }) hiddenMode: boolean = false;
   @Prop() titleBanner: string = '';
   @Prop({ mutable: true }) isOpen: boolean = false;
+  @Prop() bannerPosition: 'top' | 'center' | 'bottom' = 'center';
 
   @Prop() isLoading: boolean = false;
   @Prop() notify: BannerNotify | null = null;
@@ -203,7 +204,7 @@ export class NlBanner {
                 </svg>
               </div>
               <p class="mb-2 text-center max-w-40 min-w-40 mx-auto">
-                {this.mode === 'timeout' ? 'Keys not responding, check your key storage app' : `Confirmation required at ${this.domain}`}
+                {this.mode === 'timeout' ? 'No response from signer. Check your key storage app.' : `Confirmation required at ${this.domain}`}
               </p>
 
               {this.mode === 'timeout' ? (
@@ -320,20 +321,22 @@ export class NlBanner {
     const dialogs = deepQuerySelectorAll('dialog');
     const needDialog = !!dialogs.find(d => (d as HTMLDialogElement).open && !d.classList.contains('nl-banner-dialog'));
 
+    const posClass = this.bannerPosition === 'top' ? 'top-4' : this.bannerPosition === 'bottom' ? 'bottom-4' : 'top-52';
+
     return (
       <div class={`theme-${this.theme} ${!this.isOpen && this.hiddenMode ? 'hidden' : ''}`}>
         <div class={this.darkMode && 'dark'} dir="ltr">
           {this.isOpenConfirm && needDialog ? (
             <nl-dialog>
               <div
-                class={`nl-banner ${this.isOpen ? 'w-52 h-auto right-2 rounded-r-lg isOpen ' : 'rounded-r-none hover:rounded-r-lg cursor-pointer'} z-50 w-12 h-12 fixed top-52 right-0 inline-block gap-x-2 text-sm font-medium  rounded-lg hover:right-2  transition-all duration-300 ease-in-out`}
+                class={`nl-banner ${this.isOpen ? 'w-52 h-auto right-2 rounded-r-lg isOpen ' : 'rounded-r-none hover:rounded-r-lg cursor-pointer'} z-50 w-12 h-12 fixed ${posClass} right-0 inline-block gap-x-2 text-sm font-medium  rounded-lg hover:right-2  transition-all duration-300 ease-in-out`}
               >
                 {content}
               </div>
             </nl-dialog>
           ) : (
             <div
-              class={`nl-banner ${this.isOpen ? 'w-52 h-auto right-2 rounded-r-lg isOpen' : 'rounded-r-none hover:rounded-r-lg cursor-pointer'} z-50 w-12 h-12 fixed top-52 right-0 inline-block gap-x-2 text-sm font-medium  rounded-lg hover:right-2  transition-all duration-300 ease-in-out`}
+              class={`nl-banner ${this.isOpen ? 'w-52 h-auto right-2 rounded-r-lg isOpen' : 'rounded-r-none hover:rounded-r-lg cursor-pointer'} z-50 w-12 h-12 fixed ${posClass} right-0 inline-block gap-x-2 text-sm font-medium  rounded-lg hover:right-2  transition-all duration-300 ease-in-out`}
             >
               {content}
             </div>

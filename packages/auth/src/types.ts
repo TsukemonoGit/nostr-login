@@ -40,6 +40,9 @@ export interface NostrLoginOptions {
   // do not show the banner, modals must be `launch`-ed
   noBanner?: boolean;
 
+  // banner vertical position: 'top', 'center', 'bottom' (default: 'center')
+  bannerPosition?: 'top' | 'center' | 'bottom';
+
   // forward reqs to this bunker origin for testing
   devOverrideBunkerOrigin?: string;
 
