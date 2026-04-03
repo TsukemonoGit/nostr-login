@@ -144,7 +144,21 @@ class AuthNostrService extends EventEmitter implements Signer {
   ) {
     console.log('[nostrConnect] Called', { relay, domain, link, iframeUrl, importConnect, customRelays });
 
-    const relays = customRelays && customRelays.length > 0 ? customRelays : relay ? [relay] : DEFAULT_NIP46_RELAYS;
+    // linkのnostrconnect URLからリレーヒントを抽出
+    let linkRelays: string[] = [];
+    if (link) {
+      try {
+        const ncMatch = link.match(/nostrconnect:\/\/[^?]*\?(.*)/);
+        if (ncMatch) {
+          const params = new URLSearchParams(ncMatch[1]);
+          linkRelays = params.getAll('relay');
+        }
+      } catch (e) {
+        console.warn('[nostrConnect] Failed to parse relay hints from link', e);
+      }
+    }
+
+    const relays = customRelays && customRelays.length > 0 ? customRelays : linkRelays.length > 0 ? linkRelays : relay ? [relay] : DEFAULT_NIP46_RELAYS;
 
     const info: Info = {
       authMethod: 'connect',
@@ -264,7 +278,11 @@ class AuthNostrService extends EventEmitter implements Signer {
 
     await Promise.all(fetchPromises);
 
-    return [nostrconnect, apps];
+    // QRコード用のnostrconnect URLにもリレーヒントを付与
+    const relayParams = defaultRelays.map(r => `&relay=${encodeURIComponent(r)}`).join('');
+    const nostrconnectWithRelays = nostrconnect + relayParams;
+
+    return [nostrconnectWithRelays, apps];
   }
 
   public async localSignup(name: string, sk?: string) {

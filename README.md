@@ -195,17 +195,17 @@ bunker URL 入力画面で **Scan QR Code** ボタンからカメラを起動し
 
 各フェーズで異なるタイムアウトを設定しています。
 
-| フェーズ | タイムアウト | 定数 / 箇所 | 説明 |
-|---|---|---|---|
-| リレー接続待ち | **5秒** | `RelayPool.connect()` / `RelayHealthManager` | リレーへの WebSocket 接続確立を待つ時間 |
-| EOSE / OK 待ち | **5秒** | `eoseTimeout` / `okTimeout` (rx-nostr) | リレーからの EOSE・OK メッセージの待機 |
-| バナー通知表示 | **5秒** | `CALL_TIMEOUT` | 署名開始からバナーにローディング通知を出すまで |
-| NIP-46 RPC リクエスト | **30秒** | `NIP46_REQUEST_TIMEOUT` | 署名機への署名・暗号化リクエストの応答待ち |
-| auth_url 受信後 | **120秒** | `NIP46_REQUEST_TIMEOUT × 4` | ユーザーが署名機アプリで操作する時間 |
-| 初回接続（listen） | **60秒** | `NostrRpc.listen()` | Nostr Connect 初回接続の確立待ち |
-| connect リクエスト | **30秒** | `NostrRpc.connect()` | connect メソッドの応答待ち |
-| エラーリレー自動再接続 | **30秒** | `RelayPool` (delay) | リトライ上限到達後の自動再接続までの待機 |
-| auth_url 後のバナー通知 | **120秒** | `AUTH_URL_CALL_TIMEOUT` | auth_url 受信後のバナータイムアウト通知延長 |
+| フェーズ                | タイムアウト | 定数 / 箇所                                  | 説明                                           |
+| ----------------------- | ------------ | -------------------------------------------- | ---------------------------------------------- |
+| リレー接続待ち          | **5秒**      | `RelayPool.connect()` / `RelayHealthManager` | リレーへの WebSocket 接続確立を待つ時間        |
+| EOSE / OK 待ち          | **5秒**      | `eoseTimeout` / `okTimeout` (rx-nostr)       | リレーからの EOSE・OK メッセージの待機         |
+| バナー通知表示          | **5秒**      | `CALL_TIMEOUT`                               | 署名開始からバナーにローディング通知を出すまで |
+| NIP-46 RPC リクエスト   | **30秒**     | `NIP46_REQUEST_TIMEOUT`                      | 署名機への署名・暗号化リクエストの応答待ち     |
+| auth_url 受信後         | **120秒**    | `NIP46_REQUEST_TIMEOUT × 4`                  | ユーザーが署名機アプリで操作する時間           |
+| 初回接続（listen）      | **60秒**     | `NostrRpc.listen()`                          | Nostr Connect 初回接続の確立待ち               |
+| connect リクエスト      | **30秒**     | `NostrRpc.connect()`                         | connect メソッドの応答待ち                     |
+| エラーリレー自動再接続  | **30秒**     | `RelayPool` (delay)                          | リトライ上限到達後の自動再接続までの待機       |
+| auth_url 後のバナー通知 | **120秒**    | `AUTH_URL_CALL_TIMEOUT`                      | auth_url 受信後のバナータイムアウト通知延長    |
 
 > 定数は `packages/auth/src/const/index.ts` で一元管理しています。
 
