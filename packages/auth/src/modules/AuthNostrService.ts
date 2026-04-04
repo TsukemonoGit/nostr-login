@@ -96,6 +96,7 @@ class AuthNostrService extends EventEmitter implements Signer {
   public cancelNostrConnect() {
     console.log('cancelNostrConnect called');
     this.releaseSigner();
+    this.resetNostrConnectKeys();
 
     // readyCallbackのみ解放
     this.resetAuth();
@@ -208,14 +209,35 @@ class AuthNostrService extends EventEmitter implements Signer {
       this.onAuth('login', info);
     }
 
+    // 接続成功後にkey/secretをリセット（次回のモーダル表示で新規生成される）
+    this.resetNostrConnectKeys();
+
     console.log('[nostrConnect] Completed successfully');
     return info;
   }
 
-  public async createNostrConnect() {
-    this.nostrConnectKey = generatePrivateKey();
-    this.nostrConnectSecret = Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('');
+  public async createNostrConnect(relays: string[]) {
+    this.ensureNostrConnectKeys();
+    return this.buildNostrConnectUrl(relays);
+  }
 
+  /**
+   * key/secret が未生成なら新規生成する。既存なら再利用。
+   * モーダル表示中にリレーが変更されても key/secret は維持される。
+   */
+  private ensureNostrConnectKeys() {
+    if (!this.nostrConnectKey) {
+      this.nostrConnectKey = generatePrivateKey();
+    }
+    if (!this.nostrConnectSecret) {
+      this.nostrConnectSecret = Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('');
+    }
+  }
+
+  /**
+   * 現在の key/secret を使って nostrconnect:// URL を構築する。
+   */
+  private async buildNostrConnectUrl(relays: string[]): Promise<string> {
     const pubkey = getPublicKey(hexToBytes(this.nostrConnectKey));
     const meta = {
       name: encodeURIComponent(document.location.host),
@@ -224,27 +246,34 @@ class AuthNostrService extends EventEmitter implements Signer {
       perms: encodeURIComponent(this.params.optionsModal.perms || ''),
     };
 
-    return `nostrconnect://${pubkey}?image=${meta.icon}&url=${meta.url}&name=${meta.name}&perms=${meta.perms}&secret=${this.nostrConnectSecret}`;
+    const relayParams = relays.map(r => `&relay=${encodeURIComponent(r)}`).join('');
+    return `nostrconnect://${pubkey}?image=${meta.icon}&url=${meta.url}&name=${meta.name}&perms=${meta.perms}&secret=${this.nostrConnectSecret}${relayParams}`;
+  }
+
+  /**
+   * nostrconnect セッションをリセットし、key/secret を再生成可能にする。
+   */
+  public resetNostrConnectKeys() {
+    this.nostrConnectKey = '';
+    this.nostrConnectSecret = '';
   }
 
   public async getNostrConnectServices(customRelays?: string[], onUpdate?: (apps: ConnectionString[]) => void): Promise<[string, ConnectionString[]]> {
-    const nostrconnect = await this.createNostrConnect();
+    const defaultRelays = customRelays && customRelays.length > 0 ? customRelays : DEFAULT_NIP46_RELAYS;
+    // ベースURLにリレーヒントを含める
+    const nostrconnect = await this.createNostrConnect(defaultRelays);
 
     const apps: ConnectionString[] = NOSTRCONNECT_APPS.map(a => ({ ...a }));
-    const defaultRelays = customRelays && customRelays.length > 0 ? customRelays : DEFAULT_NIP46_RELAYS;
 
     // Build initial list: https services are 'loading', others are immediately available
     for (const a of apps) {
       if (a.link.startsWith('https://')) {
         a.available = 'loading';
-        // Set link with default relays for now
-        const relayParams = defaultRelays.map(r => `&relay=${encodeURIComponent(r)}`).join('');
-        a.link = nostrconnect + relayParams;
+        // nostrconnect URL にはすでにリレーヒントが含まれている
+        a.link = nostrconnect;
       } else {
         a.available = true;
-        const relayParams = defaultRelays.map(r => `&relay=${encodeURIComponent(r)}`).join('');
-        const nc = nostrconnect + relayParams;
-        a.link = a.link.replace('<nostrconnect>', nc);
+        a.link = a.link.replace('<nostrconnect>', nostrconnect);
       }
     }
 
@@ -259,15 +288,14 @@ class AuthNostrService extends EventEmitter implements Signer {
         try {
           const info = await fetchNostrJson(domain);
           const pubkey = info.names['_'];
-          let relays = defaultRelays;
           const fetchedRelays = info.nip46[pubkey] as string[];
-          if (fetchedRelays && fetchedRelays.length && (!customRelays || customRelays.length === 0)) {
-            relays = fetchedRelays;
-          }
           a.iframeUrl = info.nip46.iframe_url || '';
-          const relayParams = relays.map(r => `&relay=${encodeURIComponent(r)}`).join('');
-          const nc = nostrconnect + relayParams;
-          a.link = a.iframeUrl ? nc : a.link;
+          // サービス固有のリレーがあればURLを再構築
+          if (fetchedRelays && fetchedRelays.length && (!customRelays || customRelays.length === 0)) {
+            a.link = this.replaceRelayHints(a.iframeUrl ? nostrconnect : a.link, fetchedRelays);
+          } else if (a.iframeUrl) {
+            a.link = nostrconnect;
+          }
           a.available = true;
         } catch (e) {
           console.log('Service unavailable', domain, e);
@@ -278,11 +306,17 @@ class AuthNostrService extends EventEmitter implements Signer {
 
     await Promise.all(fetchPromises);
 
-    // QRコード用のnostrconnect URLにもリレーヒントを付与
-    const relayParams = defaultRelays.map(r => `&relay=${encodeURIComponent(r)}`).join('');
-    const nostrconnectWithRelays = nostrconnect + relayParams;
+    return [nostrconnect, apps];
+  }
 
-    return [nostrconnectWithRelays, apps];
+  private replaceRelayHints(nostrconnectUrl: string, newRelays: string[]): string {
+    // 文字列操作でrelay=パラメータだけを置換（searchParams経由の再エンコードを回避）
+    const [base, query] = nostrconnectUrl.split('?');
+    const params = (query || '').split('&').filter(p => !p.startsWith('relay='));
+    for (const r of newRelays) {
+      params.push(`relay=${encodeURIComponent(r)}`);
+    }
+    return `${base}?${params.join('&')}`;
   }
 
   public async localSignup(name: string, sk?: string) {

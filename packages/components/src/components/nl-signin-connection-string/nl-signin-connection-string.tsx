@@ -1,4 +1,4 @@
-import { Component, h, Prop, Fragment, State, Event, EventEmitter } from '@stencil/core';
+import { Component, h, Prop, Fragment, State, Event, EventEmitter, Watch } from '@stencil/core';
 import QRCode from 'qrcode';
 
 @Component({
@@ -17,6 +17,11 @@ export class NlSigninConnectionString {
 
   componentDidLoad() {
     this.nlNostrConnectDefault.emit();
+    this.generateQRCode();
+  }
+
+  @Watch('connectionString')
+  onConnectionStringChanged() {
     this.generateQRCode();
   }
 
