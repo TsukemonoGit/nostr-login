@@ -292,10 +292,9 @@ class AuthNostrService extends EventEmitter implements Signer {
           a.iframeUrl = info.nip46.iframe_url || '';
           // サービス固有のリレーがあればURLを再構築
           if (fetchedRelays && fetchedRelays.length && (!customRelays || customRelays.length === 0)) {
-            const serviceNostrconnect = this.replaceRelayHints(nostrconnect, fetchedRelays);
-            a.link = a.iframeUrl ? serviceNostrconnect : a.link;
-          } else {
-            a.link = a.iframeUrl ? nostrconnect : a.link;
+            a.link = this.replaceRelayHints(a.iframeUrl ? nostrconnect : a.link, fetchedRelays);
+          } else if (a.iframeUrl) {
+            a.link = nostrconnect;
           }
           a.available = true;
         } catch (e) {
@@ -311,13 +310,13 @@ class AuthNostrService extends EventEmitter implements Signer {
   }
 
   private replaceRelayHints(nostrconnectUrl: string, newRelays: string[]): string {
-    // 既存のrelay=パラメータを除去して新しいリレーに置換
-    const url = new URL(nostrconnectUrl);
-    url.searchParams.delete('relay');
+    // 文字列操作でrelay=パラメータだけを置換（searchParams経由の再エンコードを回避）
+    const [base, query] = nostrconnectUrl.split('?');
+    const params = (query || '').split('&').filter(p => !p.startsWith('relay='));
     for (const r of newRelays) {
-      url.searchParams.append('relay', r);
+      params.push(`relay=${encodeURIComponent(r)}`);
     }
-    return url.toString();
+    return `${base}?${params.join('&')}`;
   }
 
   public async localSignup(name: string, sk?: string) {
