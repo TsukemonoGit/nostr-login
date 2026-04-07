@@ -734,7 +734,7 @@ class AuthNostrService extends EventEmitter implements Signer {
       if (iframeUrl) info.iframeUrl = iframeUrl;
 
       // カスタムリレーが指定されていれば使用する
-      if (customRelays && customRelays.length > 0) {
+      if ((!info.relays || info.relays.length === 0) && customRelays && customRelays.length > 0) {
         info.relays = customRelays;
       }
 
