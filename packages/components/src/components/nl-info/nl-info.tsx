@@ -37,8 +37,8 @@ export class NlInfo {
           's open-source tool.
           <br />
           Source:{' '}
-          <a target="_blank" href="https://github.com/nicofighter45/nostr-login">
-            nicofighter45/nostr-login
+          <a target="_blank" href="https://github.com/TsukemonoGit/nostr-login">
+            TsukemonoGit/nostr-login
           </a>
         </p>
       </div>
