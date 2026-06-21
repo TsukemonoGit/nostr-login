@@ -174,7 +174,7 @@ export class Nip46Signer extends EventEmitter {
     return new Promise<string[] | null>((resolve, reject) => {
       this.rpc.sendRequest(this.bunkerPubkey, 'switch_relays', [], 24133, (response: RpcResponse) => {
         if (response.error) {
-          reject(new Nip46Error(response.error, 'TIMEOUT'));
+          reject(new Nip46Error(response.error, 'SIGNER_REJECTED'));
         } else {
           // result は JSON 文字列: ["wss://...", ...] または "null"
           try {
