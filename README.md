@@ -5,6 +5,9 @@
 
 | 機能                            | 説明                                                                                                                                            |
 | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| **NIP-46 仕様合致**             | `ping`, `switch_relays`, `logout` メソッドの実装。接続確立時の自動 `switch_relays` 呼び出し。NIP-46 仕様に準拠                                        |
+| **nip44 暗号化の統合**          | `nip44_encrypt` / `nip44_decrypt` を Nip46Signer に統一。`codec_call` から `signer` メソッドへ移行                                                 |
+| **createAccount2 非推奨化**     | NIP-46 仕様から `create_account` が別 NIP へ移動したため、deprecated 警告付きで維持                                                              |
 | **rx-nostr ベースのリレー管理** | 自前の WebSocket 管理を [rx-nostr](https://github.com/penpenpng/rx-nostr) v3 に置き換え。自動再接続・lazy-keep 接続戦略・リアクティブな接続監視 |
 | **複数 NIP-46 リレー対応**      | 単一リレー固定 → UI上で任意の複数リレーを追加・削除・リセット可能                                                                               |
 | **QR コード読み取り**           | bunker URL の手入力のみ → カメラで QR コードをスキャンして接続                                                                                  |
@@ -168,6 +171,18 @@ document.dispatchEvent(new Event("nlNeedAuthCancel"));
 ---
 
 ## フォーク固有の機能
+
+### NIP-46 仕様合致
+
+NIP-46 仕様に準拠するため、以下の実装を追加しました：
+
+- **`ping()`** — signer の死活確認（`[] → "pong"`）
+- **`switchRelays()`** — リレーリストの更新。接続確立時に自動的に呼び出し、signer から返されたリレーリストにプールを更新
+- **`logout()`** — NIP-46 RPC 経由でリモート signer にセッション終了を通知。失敗してもローカルクリーンアップは継続（非致命的エラー）
+- **`nip44Encrypt()` / `nip44Decrypt()`** — NIP-44 暗号化・復号を Nip46Signer に統一
+- **`createAccount2()`** — NIP-46 仕様から `create_account` が別 NIP へ移動したため deprecated 化。警告ログを出力しながら一時的に維持
+
+`switch_relays` は NIP-46 Spec で "should"（MUST ではない）と定義されており、失敗時は警告出力のみの非致命的エラーとして扱います。
 
 ### rx-nostr ベースのリレー管理
 

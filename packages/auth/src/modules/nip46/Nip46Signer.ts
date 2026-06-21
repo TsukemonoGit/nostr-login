@@ -151,7 +151,94 @@ export class Nip46Signer extends EventEmitter {
     });
   }
 
+  /**
+   * NIP-46 ping — signer の死活確認
+   */
+  public async ping(): Promise<boolean> {
+    return new Promise<boolean>((resolve, reject) => {
+      this.rpc.sendRequest(this.bunkerPubkey, 'ping', [], 24133, (response: RpcResponse) => {
+        if (response.error) {
+          reject(new Nip46Error(response.error, 'SIGNER_REJECTED'));
+        } else {
+          resolve(response.result === 'pong');
+        }
+      });
+    });
+  }
+
+  /**
+   * NIP-46 switch_relays — リレーリストの更新
+   * Spec: 接続確立後に client が即時送信、signer が relay リストを返す
+   */
+  public async switchRelays(): Promise<string[] | null> {
+    return new Promise<string[] | null>((resolve, reject) => {
+      this.rpc.sendRequest(this.bunkerPubkey, 'switch_relays', [], 24133, (response: RpcResponse) => {
+        if (response.error) {
+          reject(new Nip46Error(response.error, 'SIGNER_REJECTED'));
+        } else {
+          // result は JSON 文字列: ["wss://...", ...] または "null"
+          try {
+            const parsed = JSON.parse(response.result);
+            resolve(Array.isArray(parsed) ? parsed : null);
+          } catch {
+            resolve(null);
+          }
+        }
+      });
+    });
+  }
+
+  /**
+   * NIP-46 logout — リモート signer にセッション終了を通知
+   */
+  public async logout(): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      this.rpc.sendRequest(this.bunkerPubkey, 'logout', [], 24133, (response: RpcResponse) => {
+        if (response.error) {
+          reject(new Nip46Error(response.error, 'SIGNER_REJECTED'));
+        } else {
+          resolve();
+        }
+      });
+    });
+  }
+
+  /**
+   * NIP-46 remote encrypt (NIP-44)
+   */
+  public async nip44Encrypt(recipientPubkey: string, plaintext: string): Promise<string> {
+    return new Promise<string>((resolve, reject) => {
+      this.rpc.sendRequest(this.bunkerPubkey, 'nip44_encrypt', [recipientPubkey, plaintext], 24133, (response: RpcResponse) => {
+        if (response.error) {
+          reject(new Nip46Error(response.error, 'SIGNER_REJECTED'));
+        } else {
+          resolve(response.result);
+        }
+      });
+    });
+  }
+
+  /**
+   * NIP-46 remote decrypt (NIP-44)
+   */
+  public async nip44Decrypt(senderPubkey: string, ciphertext: string): Promise<string> {
+    return new Promise<string>((resolve, reject) => {
+      this.rpc.sendRequest(this.bunkerPubkey, 'nip44_decrypt', [senderPubkey, ciphertext], 24133, (response: RpcResponse) => {
+        if (response.error) {
+          reject(new Nip46Error(response.error, 'SIGNER_REJECTED'));
+        } else {
+          resolve(response.result);
+        }
+      });
+    });
+  }
+
+  /**
+   * @deprecated NIP-46 spec から create_account は別 NIP へ移動済み。
+   * 将来的に削除されます。
+   */
   public async createAccount2({ bunkerPubkey, name, domain, perms = '' }: { bunkerPubkey: string; name: string; domain: string; perms?: string }) {
+    console.warn('[DEPRECATED] createAccount2 is deprecated per NIP-46 spec. Will be removed in a future version.');
     const params = [name, domain, '', perms];
 
     const r = await new Promise<RpcResponse>((ok, err) => {
