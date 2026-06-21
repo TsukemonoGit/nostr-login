@@ -702,14 +702,18 @@ class AuthNostrService extends EventEmitter implements Signer {
           await this.signer!.initUserPubkey(info.pubkey);
         }
 
-        // NIP-46 Spec: 接続確立後に switch_relays を即時送信
-        const newRelays = await this.signer!.switchRelays();
-        if (newRelays && newRelays.length > 0) {
-          this.pool.removeAllRelays();
-          for (const r of newRelays) {
-            this.pool.addRelay(r);
+        // NIP-46 Spec: 接続確立後に switch_relays を即時送信（should、非致命的）
+        try {
+          const newRelays = await this.signer!.switchRelays();
+          if (newRelays && newRelays.length > 0) {
+            this.pool.removeAllRelays();
+            for (const r of newRelays) {
+              this.pool.addRelay(r);
+            }
+            this.signer!.rpc.resubscribe();
           }
-          this.signer!.rpc.resubscribe();
+        } catch (e) {
+          console.warn('NIP-46 switch_relays failed (non-fatal):', e);
         }
 
         info.pubkey = this.signer!.userPubkey as string;
