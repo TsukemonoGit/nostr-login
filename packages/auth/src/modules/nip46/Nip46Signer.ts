@@ -158,7 +158,7 @@ export class Nip46Signer extends EventEmitter {
     return new Promise<boolean>((resolve, reject) => {
       this.rpc.sendRequest(this.bunkerPubkey, 'ping', [], 24133, (response: RpcResponse) => {
         if (response.error) {
-          reject(new Nip46Error(response.error, 'TIMEOUT'));
+          reject(new Nip46Error(response.error, 'SIGNER_REJECTED'));
         } else {
           resolve(response.result === 'pong');
         }
