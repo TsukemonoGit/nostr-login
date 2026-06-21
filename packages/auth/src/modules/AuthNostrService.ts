@@ -706,9 +706,16 @@ class AuthNostrService extends EventEmitter implements Signer {
         try {
           const newRelays = await this.signer!.switchRelays();
           if (newRelays && newRelays.length > 0) {
-            this.pool.removeAllRelays();
+            // 一時的にリレーゼロにならないよう、先に追加してから削除
+            const oldRelays = this.pool.relayUrls;
             for (const r of newRelays) {
               this.pool.addRelay(r);
+            }
+            // 古いリレーを削除（新規に含まれないものを除外）
+            for (const r of oldRelays) {
+              if (!newRelays.includes(r)) {
+                this.pool.removeRelay(r);
+              }
             }
             this.signer!.rpc.resubscribe();
           }
