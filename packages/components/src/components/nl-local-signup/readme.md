@@ -2,7 +2,6 @@
 
 <!-- Auto Generated Below -->
 
-
 ## Properties
 
 | Property           | Attribute           | Description | Type      | Default                                                  |
@@ -12,7 +11,6 @@
 | `signupNjump`      | `signup-njump`      |             | `boolean` | `false`                                                  |
 | `titleSignup`      | `title-signup`      |             | `string`  | `'Create Nostr profile'`                                 |
 
-
 ## Events
 
 | Event           | Description | Type                   |
@@ -21,18 +19,18 @@
 | `nlLocalSignup` |             | `CustomEvent<string>`  |
 | `nlSignupNjump` |             | `CustomEvent<void>`    |
 
-
 ## Dependencies
 
 ### Used by
 
- - [nl-auth](../nl-auth)
+- [nl-auth](../nl-auth)
 
 ### Depends on
 
 - [button-base](../button-base)
 
 ### Graph
+
 ```mermaid
 graph TD;
   nl-local-signup --> button-base
@@ -40,6 +38,6 @@ graph TD;
   style nl-local-signup fill:#f9f,stroke:#333,stroke-width:4px
 ```
 
-----------------------------------------------
+---
 
-*Built with [StencilJS](https://stenciljs.com/)*
+_Built with [StencilJS](https://stenciljs.com/)_

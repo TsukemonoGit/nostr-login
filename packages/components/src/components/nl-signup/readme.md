@@ -2,7 +2,6 @@
 
 <!-- Auto Generated Below -->
 
-
 ## Properties
 
 | Property      | Attribute      | Description | Type     | Default                                           |
@@ -10,7 +9,6 @@
 | `bunkers`     | `bunkers`      |             | `string` | `'nsec.app,highlighter.com'`                      |
 | `description` | `description`  |             | `string` | `'Choose some username and a key store service.'` |
 | `titleSignup` | `title-signup` |             | `string` | `'Create keys with key store'`                    |
-
 
 ## Events
 
@@ -20,12 +18,11 @@
 | `nlFetchStatus` |             | `CustomEvent<boolean>` |
 | `nlSignup`      |             | `CustomEvent<string>`  |
 
-
 ## Dependencies
 
 ### Used by
 
- - [nl-auth](../nl-auth)
+- [nl-auth](../nl-auth)
 
 ### Depends on
 
@@ -33,6 +30,7 @@
 - [button-base](../button-base)
 
 ### Graph
+
 ```mermaid
 graph TD;
   nl-signup --> nl-select
@@ -41,6 +39,6 @@ graph TD;
   style nl-signup fill:#f9f,stroke:#333,stroke-width:4px
 ```
 
-----------------------------------------------
+---
 
-*Built with [StencilJS](https://stenciljs.com/)*
+_Built with [StencilJS](https://stenciljs.com/)_

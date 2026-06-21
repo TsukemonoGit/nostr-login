@@ -2,7 +2,6 @@
 
 <!-- Auto Generated Below -->
 
-
 ## Properties
 
 | Property         | Attribute   | Description | Type                                             | Default     |
@@ -12,7 +11,6 @@
 | `darkMode`       | `dark-mode` |             | `boolean`                                        | `false`     |
 | `theme`          | `theme`     |             | `"default" \| "lemonade" \| "ocean" \| "purple"` | `'default'` |
 
-
 ## Events
 
 | Event                | Description | Type                  |
@@ -20,18 +18,18 @@
 | `nlOpenWelcomeModal` |             | `CustomEvent<string>` |
 | `nlSwitchAccount`    |             | `CustomEvent<Info>`   |
 
-
 ## Dependencies
 
 ### Used by
 
- - [nl-banner](../nl-banner)
+- [nl-banner](../nl-banner)
 
 ### Depends on
 
 - [nl-login-status](../nl-login-status)
 
 ### Graph
+
 ```mermaid
 graph TD;
   nl-change-account --> nl-login-status
@@ -39,6 +37,6 @@ graph TD;
   style nl-change-account fill:#f9f,stroke:#333,stroke-width:4px
 ```
 
-----------------------------------------------
+---
 
-*Built with [StencilJS](https://stenciljs.com/)*
+_Built with [StencilJS](https://stenciljs.com/)_
