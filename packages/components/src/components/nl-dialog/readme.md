@@ -2,20 +2,20 @@
 
 <!-- Auto Generated Below -->
 
+
 ## Dependencies
 
 ### Used by
 
-- [nl-banner](../nl-banner)
+ - [nl-banner](../nl-banner)
 
 ### Graph
-
 ```mermaid
 graph TD;
   nl-banner --> nl-dialog
   style nl-dialog fill:#f9f,stroke:#333,stroke-width:4px
 ```
 
----
+----------------------------------------------
 
-_Built with [StencilJS](https://stenciljs.com/)_
+*Built with [StencilJS](https://stenciljs.com/)*

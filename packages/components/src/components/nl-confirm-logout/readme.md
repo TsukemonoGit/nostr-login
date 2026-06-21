@@ -2,12 +2,14 @@
 
 <!-- Auto Generated Below -->
 
+
 ## Properties
 
 | Property      | Attribute     | Description | Type     | Default                                                                                                                         |
 | ------------- | ------------- | ----------- | -------- | ------------------------------------------------------------------------------------------------------------------------------- |
 | `description` | `description` |             | `string` | `'Your profile keys are stored in this browser tab and will be deleted if you log out, and your profile will be inaccessible.'` |
 | `titleModal`  | `title-modal` |             | `string` | `'Delete keys?'`                                                                                                                |
+
 
 ## Events
 
@@ -17,18 +19,18 @@
 | `nlCloseModal`   |             | `CustomEvent<any>`    |
 | `nlLogoutBanner` |             | `CustomEvent<string>` |
 
+
 ## Dependencies
 
 ### Used by
 
-- [nl-auth](../nl-auth)
+ - [nl-auth](../nl-auth)
 
 ### Depends on
 
 - [button-base](../button-base)
 
 ### Graph
-
 ```mermaid
 graph TD;
   nl-confirm-logout --> button-base
@@ -36,6 +38,6 @@ graph TD;
   style nl-confirm-logout fill:#f9f,stroke:#333,stroke-width:4px
 ```
 
----
+----------------------------------------------
 
-_Built with [StencilJS](https://stenciljs.com/)_
+*Built with [StencilJS](https://stenciljs.com/)*

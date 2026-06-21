@@ -2,6 +2,7 @@
 
 <!-- Auto Generated Below -->
 
+
 ## Properties
 
 | Property                   | Attribute              | Description | Type                                                       | Default                  |
@@ -29,6 +30,7 @@
 | `welcomeDescription`       | `welcome-description`  |             | `string`                                                   | `''`                     |
 | `welcomeTitle`             | `welcome-title`        |             | `string`                                                   | `''`                     |
 
+
 ## Events
 
 | Event                         | Description | Type                   |
@@ -36,6 +38,7 @@
 | `nlChangeDarkMode`            |             | `CustomEvent<boolean>` |
 | `nlCloseModal`                |             | `CustomEvent<any>`     |
 | `nlNostrConnectDefaultCancel` |             | `CustomEvent<void>`    |
+
 
 ## Dependencies
 
@@ -63,7 +66,6 @@
 - [nl-loading](../nl-loading)
 
 ### Graph
-
 ```mermaid
 graph TD;
   nl-auth --> nl-signin-otp
@@ -109,6 +111,6 @@ graph TD;
   style nl-auth fill:#f9f,stroke:#333,stroke-width:4px
 ```
 
----
+----------------------------------------------
 
-_Built with [StencilJS](https://stenciljs.com/)_
+*Built with [StencilJS](https://stenciljs.com/)*

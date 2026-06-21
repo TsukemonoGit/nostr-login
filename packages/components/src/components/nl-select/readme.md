@@ -2,6 +2,7 @@
 
 <!-- Auto Generated Below -->
 
+
 ## Properties
 
 | Property   | Attribute   | Description | Type                                             | Default     |
@@ -11,22 +12,23 @@
 | `selected` | `selected`  |             | `number`                                         | `undefined` |
 | `theme`    | `theme`     |             | `"default" \| "lemonade" \| "ocean" \| "purple"` | `'default'` |
 
+
 ## Events
 
 | Event          | Description | Type                  |
 | -------------- | ----------- | --------------------- |
 | `selectDomain` |             | `CustomEvent<string>` |
 
+
 ## Dependencies
 
 ### Used by
 
-- [nl-import-flow](../nl-import-flow)
-- [nl-otp-migrate](../nl-otp-migrate)
-- [nl-signup](../nl-signup)
+ - [nl-import-flow](../nl-import-flow)
+ - [nl-otp-migrate](../nl-otp-migrate)
+ - [nl-signup](../nl-signup)
 
 ### Graph
-
 ```mermaid
 graph TD;
   nl-import-flow --> nl-select
@@ -35,6 +37,6 @@ graph TD;
   style nl-select fill:#f9f,stroke:#333,stroke-width:4px
 ```
 
----
+----------------------------------------------
 
-_Built with [StencilJS](https://stenciljs.com/)_
+*Built with [StencilJS](https://stenciljs.com/)*

@@ -2,6 +2,7 @@
 
 <!-- Auto Generated Below -->
 
+
 ## Properties
 
 | Property      | Attribute      | Description | Type                 | Default                                                                                                    |
@@ -11,17 +12,19 @@
 | `titleImport` | `title-import` |             | `string`             | `'Choose a service'`                                                                                       |
 | `titleInfo`   | `title-info`   |             | `string`             | `'Import keys to storage service'`                                                                         |
 
+
 ## Events
 
 | Event             | Description | Type                            |
 | ----------------- | ----------- | ------------------------------- |
 | `nlImportAccount` |             | `CustomEvent<ConnectionString>` |
 
+
 ## Dependencies
 
 ### Used by
 
-- [nl-auth](../nl-auth)
+ - [nl-auth](../nl-auth)
 
 ### Depends on
 
@@ -29,7 +32,6 @@
 - [button-base](../button-base)
 
 ### Graph
-
 ```mermaid
 graph TD;
   nl-otp-migrate --> nl-select
@@ -38,6 +40,6 @@ graph TD;
   style nl-otp-migrate fill:#f9f,stroke:#333,stroke-width:4px
 ```
 
----
+----------------------------------------------
 
-_Built with [StencilJS](https://stenciljs.com/)_
+*Built with [StencilJS](https://stenciljs.com/)*
