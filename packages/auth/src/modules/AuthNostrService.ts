@@ -456,6 +456,15 @@ class AuthNostrService extends EventEmitter implements Signer {
   }
 
   public async logout(keepSigner = false) {
+    // NIP-46 logout を送信（signer が session を削除）
+    if (this.signer && !keepSigner) {
+      try {
+        await this.signer.logout();
+      } catch (e) {
+        console.warn('NIP-46 logout RPC failed (non-fatal):', e);
+      }
+    }
+
     if (!keepSigner) this.releaseSigner();
 
     localStorageRemoveCurrentAccount();
@@ -693,6 +702,16 @@ class AuthNostrService extends EventEmitter implements Signer {
           await this.signer!.initUserPubkey(info.pubkey);
         }
 
+        // NIP-46 Spec: 接続確立後に switch_relays を即時送信
+        const newRelays = await this.signer!.switchRelays();
+        if (newRelays && newRelays.length > 0) {
+          this.pool.removeAllRelays();
+          for (const r of newRelays) {
+            this.pool.addRelay(r);
+          }
+          this.signer!.rpc.resubscribe();
+        }
+
         info.pubkey = this.signer!.userPubkey as string;
         info.signerPubkey = this.signer!.bunkerPubkey;
 
@@ -862,7 +881,7 @@ class AuthNostrService extends EventEmitter implements Signer {
       return this.localSigner.decrypt({ pubkey }, ciphertext);
     }
     await this.ensureRelayConnection();
-    return this.codec_call('nip04_decrypt', pubkey, ciphertext);
+    return this.signer!.decrypt(pubkey, ciphertext);
   }
 
   public async encrypt44(pubkey: string, plaintext: string) {
@@ -870,7 +889,7 @@ class AuthNostrService extends EventEmitter implements Signer {
       return this.nip44Codec.encrypt(this.localSigner.privateKey!, pubkey, plaintext);
     }
     await this.ensureRelayConnection();
-    return this.codec_call('nip44_encrypt', pubkey, plaintext);
+    return this.signer!.nip44Encrypt(pubkey, plaintext);
   }
 
   public async decrypt44(pubkey: string, ciphertext: string) {
@@ -878,7 +897,7 @@ class AuthNostrService extends EventEmitter implements Signer {
       return this.nip44Codec.decrypt(this.localSigner.privateKey!, pubkey, ciphertext);
     }
     await this.ensureRelayConnection();
-    return this.codec_call('nip44_decrypt', pubkey, ciphertext);
+    return this.signer!.nip44Decrypt(pubkey, ciphertext);
   }
 }
 
